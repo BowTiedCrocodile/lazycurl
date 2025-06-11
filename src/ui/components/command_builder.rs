@@ -146,16 +146,24 @@ impl<'a> CommandBuilder<'a> {
 
     /// Render URL tab
     fn render_url_tab(&self, frame: &mut Frame, area: Rect) {
-        let chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(3),  // Method selection
-                Constraint::Min(0),     // Query parameters
-            ])
-            .split(area);
-
         // Check if method dropdown is open
         let is_dropdown_open = matches!(&self.app.state, AppState::MethodDropdown);
+        
+        // Adjust layout based on dropdown state
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints(if is_dropdown_open {
+                [
+                    Constraint::Length(10), // Method dropdown (needs more space for 7 methods + borders)
+                    Constraint::Min(0),     // Query parameters
+                ]
+            } else {
+                [
+                    Constraint::Length(3),  // Method selection (normal size)
+                    Constraint::Min(0),     // Query parameters
+                ]
+            })
+            .split(area);
         
         if is_dropdown_open {
             self.render_method_dropdown(frame, chunks[0]);
@@ -593,7 +601,7 @@ impl<'a> CommandBuilder<'a> {
         let dropdown_text = Text::from(lines);
 
         let dropdown_block = Block::default()
-            .title(format!("HTTP Method Dropdown - Index: {} Method: {}", safe_selected_index, methods[safe_selected_index]))
+            .title("Method [EDITING] - Use ↑/↓ to navigate, Enter to select")
             .borders(Borders::ALL)
             .style(self.theme.editing_border_style());
 
