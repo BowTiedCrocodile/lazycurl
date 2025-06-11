@@ -125,6 +125,21 @@ impl Theme {
         Style::default().fg(self.primary)
     }
 
+    /// Get editing border style (for when actively editing a field)
+    pub fn editing_border_style(&self) -> Style {
+        Style::default()
+            .fg(self.accent)
+            .add_modifier(Modifier::BOLD)
+    }
+
+    /// Get editing style (for text being edited)
+    pub fn editing_style(&self) -> Style {
+        Style::default()
+            .fg(self.background)
+            .bg(self.accent)
+            .add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
+    }
+
     /// Get help style
     pub fn help_style(&self) -> Style {
         Style::default()

@@ -54,9 +54,11 @@ impl<'a> CommandBuilder<'a> {
         let url = &self.app.current_command.url;
 
         // Check if we're editing the URL
-        let url_text = match &self.app.state {
-            AppState::Editing(EditField::Url) => &self.app.ui_state.edit_buffer,
-            _ => url,
+        let is_editing_url = matches!(&self.app.state, AppState::Editing(EditField::Url));
+        let url_text = if is_editing_url {
+            &self.app.ui_state.edit_buffer
+        } else {
+            url
         };
 
         // Determine if URL is selected
@@ -65,13 +67,20 @@ impl<'a> CommandBuilder<'a> {
             SelectedField::Url(UrlField::Url)
         );
 
-        // Style for URL based on selection
-        let url_style = if is_url_selected {
-            Style::default()
-                .fg(self.theme.accent)
-                .add_modifier(Modifier::BOLD)
+        // Style for URL based on selection and editing state
+        let url_style = if is_editing_url {
+            self.theme.editing_style()
+        } else if is_url_selected {
+            self.theme.selected_style()
         } else {
-            Style::default()
+            self.theme.text_style()
+        };
+
+        // Add visual indicator for editing mode
+        let url_display = if is_editing_url {
+            format!("{} █", url_text) // Add cursor indicator
+        } else {
+            url_text.to_string()
         };
 
         let text = Text::from(vec![
@@ -82,18 +91,32 @@ impl<'a> CommandBuilder<'a> {
                         .fg(self.theme.primary)
                         .add_modifier(Modifier::BOLD),
                 ),
-                Span::styled(url_text, url_style),
+                Span::styled(url_display, url_style),
             ]),
         ]);
 
+        // Choose border style based on state
+        let border_style = if is_editing_url {
+            self.theme.editing_border_style()
+        } else if is_url_selected {
+            self.theme.active_border_style()
+        } else {
+            self.theme.border_style()
+        };
+
+        // Add title indicator for editing mode
+        let title = if is_editing_url {
+            "URL [EDITING]"
+        } else if is_url_selected {
+            "URL [SELECTED]"
+        } else {
+            "URL"
+        };
+
         let block = Block::default()
-            .title("URL")
+            .title(title)
             .borders(Borders::ALL)
-            .style(if is_url_selected {
-                self.theme.active_border_style()
-            } else {
-                self.theme.border_style()
-            });
+            .style(border_style);
 
         let paragraph = Paragraph::new(text).block(block);
         frame.render_widget(paragraph, area);
@@ -136,9 +159,11 @@ impl<'a> CommandBuilder<'a> {
         let current_method = self.app.current_command.method.as_ref().unwrap_or(&HttpMethod::GET).to_string();
         
         // Check if we're editing the method
-        let method_text = match &self.app.state {
-            AppState::Editing(EditField::Method) => &self.app.ui_state.edit_buffer,
-            _ => &current_method,
+        let is_editing_method = matches!(&self.app.state, AppState::Editing(EditField::Method));
+        let method_text = if is_editing_method {
+            &self.app.ui_state.edit_buffer
+        } else {
+            &current_method
         };
 
         // Determine if method is selected
@@ -147,28 +172,51 @@ impl<'a> CommandBuilder<'a> {
             SelectedField::Url(UrlField::Method)
         );
 
-        // Style for method based on selection
-        let method_style = if is_method_selected {
-            self.theme.highlight_style()
-        } else {
+        // Style for method based on selection and editing state
+        let method_style = if is_editing_method {
+            self.theme.editing_style()
+        } else if is_method_selected {
             self.theme.selected_style()
+        } else {
+            self.theme.text_style()
+        };
+
+        // Add visual indicator for editing mode
+        let method_display = if is_editing_method {
+            format!("{} █", method_text) // Add cursor indicator
+        } else {
+            method_text.to_string()
         };
 
         let method_text = Text::from(vec![
             Line::from(vec![
                 Span::raw("HTTP Method: "),
-                Span::styled(method_text, method_style),
+                Span::styled(method_display, method_style),
             ]),
         ]);
 
+        // Choose border style based on state
+        let border_style = if is_editing_method {
+            self.theme.editing_border_style()
+        } else if is_method_selected {
+            self.theme.active_border_style()
+        } else {
+            self.theme.border_style()
+        };
+
+        // Add title indicator for editing mode
+        let title = if is_editing_method {
+            "Method [EDITING]"
+        } else if is_method_selected {
+            "Method [SELECTED]"
+        } else {
+            "Method"
+        };
+
         let method_block = Block::default()
-            .title("Method")
+            .title(title)
             .borders(Borders::ALL)
-            .style(if is_method_selected {
-                self.theme.active_border_style()
-            } else {
-                self.theme.border_style()
-            });
+            .style(border_style);
 
         let method_paragraph = Paragraph::new(method_text).block(method_block);
         frame.render_widget(method_paragraph, chunks[0]);
@@ -193,17 +241,36 @@ impl<'a> CommandBuilder<'a> {
                 );
 
                 // Check if we're editing this query param
-                let value_text = match &self.app.state {
-                    AppState::Editing(EditField::QueryParamValue(edit_idx)) if *edit_idx == idx =>
-                        &self.app.ui_state.edit_buffer,
-                    _ => &param.value,
+                let is_editing = matches!(&self.app.state, AppState::Editing(EditField::QueryParamValue(edit_idx)) if *edit_idx == idx);
+                let value_text = if is_editing {
+                    &self.app.ui_state.edit_buffer
+                } else {
+                    &param.value
                 };
 
-                // Style based on selection
-                let style = if is_selected {
-                    self.theme.highlight_style()
+                // Style based on selection and editing state
+                let style = if is_editing {
+                    self.theme.editing_style()
+                } else if is_selected {
+                    self.theme.selected_style()
                 } else {
                     self.theme.text_style()
+                };
+
+                // Add visual indicator for editing mode
+                let value_display = if is_editing {
+                    format!("{} █", value_text) // Add cursor indicator
+                } else {
+                    value_text.to_string()
+                };
+
+                // Add status indicator
+                let status_indicator = if is_editing {
+                    " [EDITING]"
+                } else if is_selected {
+                    " [SELECTED]"
+                } else {
+                    ""
                 };
 
                 lines.push(Line::from(vec![
@@ -211,7 +278,8 @@ impl<'a> CommandBuilder<'a> {
                     Span::raw(" "),
                     Span::styled(&param.key, style),
                     Span::raw(": "),
-                    Span::styled(value_text, style),
+                    Span::styled(value_display, style),
+                    Span::styled(status_indicator, if is_editing { self.theme.editing_style() } else { self.theme.selected_style() }),
                 ]));
             }
             Text::from(lines)
@@ -242,17 +310,36 @@ impl<'a> CommandBuilder<'a> {
                 );
 
                 // Check if we're editing this header
-                let value_text = match &self.app.state {
-                    AppState::Editing(EditField::HeaderValue(edit_idx)) if *edit_idx == idx =>
-                        &self.app.ui_state.edit_buffer,
-                    _ => &header.value,
+                let is_editing = matches!(&self.app.state, AppState::Editing(EditField::HeaderValue(edit_idx)) if *edit_idx == idx);
+                let value_text = if is_editing {
+                    &self.app.ui_state.edit_buffer
+                } else {
+                    &header.value
                 };
 
-                // Style based on selection
-                let style = if is_selected {
-                    self.theme.highlight_style()
+                // Style based on selection and editing state
+                let style = if is_editing {
+                    self.theme.editing_style()
+                } else if is_selected {
+                    self.theme.selected_style()
                 } else {
                     self.theme.text_style()
+                };
+
+                // Add visual indicator for editing mode
+                let value_display = if is_editing {
+                    format!("{} █", value_text) // Add cursor indicator
+                } else {
+                    value_text.to_string()
+                };
+
+                // Add status indicator
+                let status_indicator = if is_editing {
+                    " [EDITING]"
+                } else if is_selected {
+                    " [SELECTED]"
+                } else {
+                    ""
                 };
 
                 lines.push(Line::from(vec![
@@ -260,7 +347,8 @@ impl<'a> CommandBuilder<'a> {
                     Span::raw(" "),
                     Span::styled(&header.key, style),
                     Span::raw(": "),
-                    Span::styled(value_text, style),
+                    Span::styled(value_display, style),
+                    Span::styled(status_indicator, if is_editing { self.theme.editing_style() } else { self.theme.selected_style() }),
                 ]));
             }
             Text::from(lines)
@@ -278,27 +366,45 @@ impl<'a> CommandBuilder<'a> {
             SelectedField::Body(BodyField::Content)
         );
 
+        // Check if we're editing the body
+        let is_editing_body = matches!(&self.app.state, AppState::Editing(EditField::Body));
+
+        // Choose border style based on state
+        let border_style = if is_editing_body {
+            self.theme.editing_border_style()
+        } else if is_content_selected {
+            self.theme.active_border_style()
+        } else {
+            self.theme.border_style()
+        };
+
+        // Add title indicator for editing mode
+        let title = if is_editing_body {
+            "Request Body [EDITING]"
+        } else if is_content_selected {
+            "Request Body [SELECTED]"
+        } else {
+            "Request Body"
+        };
+
         let block = Block::default()
-            .title("Request Body")
+            .title(title)
             .borders(Borders::ALL)
-            .style(if is_content_selected {
-                self.theme.active_border_style()
-            } else {
-                self.theme.border_style()
-            });
+            .style(border_style);
 
         // Check if we're editing the body
-        let text = match &self.app.state {
-            AppState::Editing(EditField::Body) => {
-                Text::from(self.app.ui_state.edit_buffer.clone())
-            },
-            _ => match &self.app.current_command.body {
+        let text = if is_editing_body {
+            // Add cursor indicator for editing mode
+            let content_with_cursor = format!("{} █", self.app.ui_state.edit_buffer);
+            Text::from(vec![Line::from(Span::styled(content_with_cursor, self.theme.editing_style()))])
+        } else {
+            match &self.app.current_command.body {
                 Some(body) => match body {
                     crate::models::command::RequestBody::Raw(content) => {
                         let style = if is_content_selected {
-                            self.theme.highlight_style()
+                            self.theme.selected_style()
                         } else {
-                            Style::default()
+                            self.theme.text_style()
                         };
                         Text::from(vec![Line::from(Span::styled(content, style))])
                     }
@@ -307,7 +413,7 @@ impl<'a> CommandBuilder<'a> {
                         for item in items {
                             let enabled = if item.enabled { "✓" } else { "✗" };
                             let style = if is_content_selected {
-                                self.theme.highlight_style()
+                                self.theme.selected_style()
                             } else {
                                 self.theme.text_style()
                             };
@@ -323,9 +429,9 @@ impl<'a> CommandBuilder<'a> {
                     }
                     crate::models::command::RequestBody::Binary(path) => {
                         let style = if is_content_selected {
-                            self.theme.highlight_style()
+                            self.theme.selected_style()
                         } else {
-                            Style::default()
+                            self.theme.text_style()
                         };
                         Text::from(vec![Line::from(Span::styled(
                             format!("Binary file: {}", path.display()),
@@ -334,22 +440,22 @@ impl<'a> CommandBuilder<'a> {
                     }
                     crate::models::command::RequestBody::None => {
                         let style = if is_content_selected {
-                            self.theme.highlight_style()
+                            self.theme.selected_style()
                         } else {
-                            Style::default()
+                            self.theme.text_style()
                         };
                         Text::from(vec![Line::from(Span::styled("No request body", style))])
                     }
                 },
                 None => {
                     let style = if is_content_selected {
-                        self.theme.highlight_style()
+                        self.theme.selected_style()
                     } else {
-                        Style::default()
+                        self.theme.text_style()
                     };
                     Text::from(vec![Line::from(Span::styled("No request body", style))])
                 },
-            },
+            }
         };
 
         let paragraph = Paragraph::new(text).block(block);
@@ -376,22 +482,35 @@ impl<'a> CommandBuilder<'a> {
                     SelectedField::Options(selected_idx) if selected_idx == idx
                 );
 
-                // Style based on selection
-                let style = if is_selected {
-                    self.theme.highlight_style()
+                // Check if we're editing this option
+                let is_editing = matches!(&self.app.state, AppState::Editing(EditField::OptionValue(edit_idx)) if *edit_idx == idx);
+
+                // Style based on selection and editing state
+                let style = if is_editing {
+                    self.theme.editing_style()
+                } else if is_selected {
+                    self.theme.selected_style()
                 } else {
                     self.theme.text_style()
                 };
 
                 // Check if we're editing this option
-                let value_display = match &self.app.state {
-                    AppState::Editing(EditField::OptionValue(edit_idx)) if *edit_idx == idx => {
-                        format!(": {}", self.app.ui_state.edit_buffer)
-                    },
-                    _ => match &option.value {
+                let value_display = if is_editing {
+                    format!(": {} █", self.app.ui_state.edit_buffer) // Add cursor indicator
+                } else {
+                    match &option.value {
                         Some(val) => format!(": {}", val),
                         None => String::new(),
-                    },
+                    }
+                };
+
+                // Add status indicator
+                let status_indicator = if is_editing {
+                    " [EDITING]"
+                } else if is_selected {
+                    " [SELECTED]"
+                } else {
+                    ""
                 };
 
                 lines.push(Line::from(vec![
@@ -399,6 +518,7 @@ impl<'a> CommandBuilder<'a> {
                     Span::raw(" "),
                     Span::styled(&option.flag, style),
                     Span::styled(value_display, style),
+                    Span::styled(status_indicator, if is_editing { self.theme.editing_style() } else { self.theme.selected_style() }),
                 ]));
             }
             Text::from(lines)
