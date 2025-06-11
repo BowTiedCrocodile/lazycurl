@@ -1,6 +1,8 @@
 use crate::models::command::CurlCommand;
 use crate::models::environment::Environment;
 use crate::models::template::CommandTemplate;
+use crate::execution::executor::{CommandExecutor, ExecutionResult};
+use crate::command::builder::CommandBuilder;
 use std::collections::HashMap;
 
 /// Application state
@@ -17,10 +19,14 @@ pub struct App {
     pub current_environment: String,
     /// Command execution output
     pub output: Option<String>,
+    /// Command execution result
+    pub execution_result: Option<ExecutionResult>,
     /// Command history
     pub history: Vec<CurlCommand>,
     /// UI state
     pub ui_state: UiState,
+    /// Command executor
+    pub executor: Option<CommandExecutor>,
 }
 
 /// Application state enum
@@ -151,6 +157,7 @@ impl Default for App {
             environments: HashMap::new(),
             current_environment: "default".to_string(),
             output: None,
+            execution_result: None,
             history: Vec::new(),
             ui_state: UiState {
                 active_tab: Tab::Url,
@@ -162,6 +169,7 @@ impl Default for App {
                 selected_option_category: OptionCategory::Basic,
                 edit_buffer: String::new(),
             },
+            executor: None,
         }
     }
 }
@@ -182,8 +190,12 @@ impl App {
             },
         );
 
+        // Try to create command executor
+        let executor = CommandExecutor::new().ok();
+
         Self {
             environments,
+            executor,
             ..Self::default()
         }
     }
@@ -294,6 +306,11 @@ impl App {
             // Show help
             (KeyCode::F(1), KeyModifiers::NONE) => {
                 self.state = AppState::Help;
+                false
+            }
+            // Execute command
+            (KeyCode::F(5), KeyModifiers::NONE) | (KeyCode::Char('r'), KeyModifiers::CONTROL) => {
+                self.execute_command();
                 false
             }
             // Default - event not handled
@@ -623,7 +640,110 @@ impl App {
 
     /// Execute the current command
     pub fn execute_command(&mut self) {
-        // This will be implemented to execute the command and capture output
+        // Check if executor is available
+        if self.executor.is_none() {
+            self.output = Some("Error: curl executable not found in PATH".to_string());
+            self.execution_result = None;
+            return;
+        }
+
+        // Get current environment
+        let environment = self.environments.get(&self.current_environment)
+            .cloned()
+            .unwrap_or_else(|| Environment {
+                id: "default".to_string(),
+                name: "Default".to_string(),
+                variables: Vec::new(),
+                created_at: chrono::Utc::now(),
+                updated_at: chrono::Utc::now(),
+            });
+
+        // Build the curl command string
+        let command_string = CommandBuilder::build(&self.current_command, &environment);
+        
+        // Set output to indicate execution is starting
+        self.output = Some("Executing command...".to_string());
+        self.execution_result = None;
+
+        // Store the command string for async execution
+        // We'll need to handle this differently since we can't do async in this sync context
+        // For now, we'll create a simple synchronous version
+        self.execute_command_sync(&command_string);
+    }
+
+    /// Execute command synchronously (blocking)
+    fn execute_command_sync(&mut self, command: &str) {
+        use std::process::Command;
+        use std::time::Instant;
+
+        let start_time = Instant::now();
+        
+        // Split command into arguments
+        let args: Vec<&str> = command.split_whitespace().collect();
+        if args.is_empty() || args[0] != "curl" {
+            self.output = Some("Error: Invalid curl command".to_string());
+            return;
+        }
+
+        // Execute the command
+        match Command::new("curl").args(&args[1..]).output() {
+            Ok(output) => {
+                let execution_time = start_time.elapsed();
+                let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+                let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+                
+                // Create execution result
+                let result = ExecutionResult {
+                    command: command.to_string(),
+                    exit_code: output.status.code(),
+                    stdout: stdout.clone(),
+                    stderr: stderr.clone(),
+                    execution_time,
+                    error: None,
+                };
+
+                // Format output for display
+                let mut display_output = String::new();
+                display_output.push_str(&format!("Command: {}\n", command));
+                display_output.push_str(&format!("Exit Code: {:?}\n", output.status.code()));
+                display_output.push_str(&format!("Execution Time: {:?}\n\n", execution_time));
+                
+                if !stdout.is_empty() {
+                    display_output.push_str("STDOUT:\n");
+                    display_output.push_str(&stdout);
+                    display_output.push_str("\n\n");
+                }
+                
+                if !stderr.is_empty() {
+                    display_output.push_str("STDERR:\n");
+                    display_output.push_str(&stderr);
+                }
+
+                self.output = Some(display_output);
+                self.execution_result = Some(result);
+
+                // Add to history if successful
+                if output.status.success() {
+                    self.history.push(self.current_command.clone());
+                }
+            }
+            Err(err) => {
+                let execution_time = start_time.elapsed();
+                let error_msg = format!("Failed to execute command: {}", err);
+                
+                let result = ExecutionResult {
+                    command: command.to_string(),
+                    exit_code: None,
+                    stdout: String::new(),
+                    stderr: String::new(),
+                    execution_time,
+                    error: Some(error_msg.clone()),
+                };
+
+                self.output = Some(format!("Error: {}", error_msg));
+                self.execution_result = Some(result);
+            }
+        }
     }
 
     /// Save the current command as a template
