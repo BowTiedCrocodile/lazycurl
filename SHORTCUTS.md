@@ -33,7 +33,8 @@ This document lists all the keyboard shortcuts available in the Terminal Visual 
 |-------------------|---------------------------------------|
 | Ctrl+N            | New command                           |
 | Ctrl+S            | Save template                         |
-| Ctrl+Enter        | Execute command                       |
+| F5                | Execute command                       |
+| Ctrl+R            | Execute command                       |
 | Ctrl+C            | Copy command to clipboard             |
 
 ## Tab Navigation

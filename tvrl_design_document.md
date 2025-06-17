@@ -487,7 +487,8 @@ max_history_items = 100
 |---------------|---------------------------|
 | Ctrl+N        | New command               |
 | Ctrl+S        | Save template             |
-| Ctrl+Enter    | Execute command           |
+| F5            | Execute command           |
+| Ctrl+R        | Execute command           |
 | Ctrl+C        | Copy command to clipboard |
 | Ctrl+E        | Focus environment selector|
 | Ctrl+H        | Toggle history panel      |

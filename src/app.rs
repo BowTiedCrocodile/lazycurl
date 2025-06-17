@@ -291,6 +291,11 @@ impl App {
                 self.navigate_field_right();
                 false
             }
+            // Execute command with F5 or Ctrl+R (reliable options)
+            (KeyCode::F(5), KeyModifiers::NONE) | (KeyCode::Char('r'), KeyModifiers::CONTROL) => {
+                self.execute_command();
+                false
+            }
             // Edit current field
             (KeyCode::Enter, KeyModifiers::NONE) => {
                 self.start_editing_field();
@@ -312,11 +317,6 @@ impl App {
             // Show help
             (KeyCode::F(1), KeyModifiers::NONE) => {
                 self.state = AppState::Help;
-                false
-            }
-            // Execute command
-            (KeyCode::F(5), KeyModifiers::NONE) | (KeyCode::Char('r'), KeyModifiers::CONTROL) => {
-                self.execute_command();
                 false
             }
             // Default - event not handled
