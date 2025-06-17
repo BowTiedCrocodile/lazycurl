@@ -47,14 +47,32 @@ impl<'a> StatusBar<'a> {
         let state_text = self.get_state_text();
         let tab_text = self.get_current_tab_text();
         
+        let focus_text = if self.app.ui_state.selected_template.is_some() {
+            "Templates"
+        } else {
+            &tab_text
+        };
+        
         let content = vec![
             Line::from(vec![
                 Span::styled("State: ", Style::default().fg(self.theme.secondary)),
                 Span::styled(state_text, Style::default().fg(self.theme.accent).add_modifier(Modifier::BOLD)),
             ]),
             Line::from(vec![
-                Span::styled("Tab: ", Style::default().fg(self.theme.secondary)),
-                Span::styled(tab_text, Style::default().fg(self.theme.primary)),
+                Span::styled("Focus: ", Style::default().fg(self.theme.secondary)),
+                Span::styled(focus_text, Style::default().fg(
+                    if self.app.ui_state.selected_template.is_some() {
+                        self.theme.accent
+                    } else {
+                        self.theme.primary
+                    }
+                ).add_modifier(
+                    if self.app.ui_state.selected_template.is_some() {
+                        Modifier::BOLD
+                    } else {
+                        Modifier::empty()
+                    }
+                )),
             ]),
         ];
 
@@ -217,14 +235,26 @@ impl<'a> StatusBar<'a> {
     fn get_available_shortcuts(&self) -> Vec<(String, String)> {
         match &self.app.state {
             AppState::Normal => {
-                vec![
-                    ("F5".to_string(), "Execute".to_string()),
-                    ("Tab".to_string(), "Next Tab".to_string()),
-                    ("↑↓".to_string(), "Navigate".to_string()),
-                    ("Enter".to_string(), "Edit".to_string()),
-                    ("F1".to_string(), "Help".to_string()),
-                    ("Ctrl+Q".to_string(), "Quit".to_string()),
-                ]
+                if self.app.ui_state.selected_template.is_some() {
+                    // When templates are selected
+                    vec![
+                        ("↑↓".to_string(), "Navigate".to_string()),
+                        ("Enter".to_string(), "Load Template".to_string()),
+                        ("→".to_string(), "To Method".to_string()),
+                        ("F1".to_string(), "Help".to_string()),
+                        ("Ctrl+Q".to_string(), "Quit".to_string()),
+                    ]
+                } else {
+                    // Normal field navigation
+                    vec![
+                        ("F5".to_string(), "Execute".to_string()),
+                        ("Tab".to_string(), "Next Tab".to_string()),
+                        ("↑↓".to_string(), "Navigate".to_string()),
+                        ("Enter".to_string(), "Edit".to_string()),
+                        ("F1".to_string(), "Help".to_string()),
+                        ("Ctrl+Q".to_string(), "Quit".to_string()),
+                    ]
+                }
             }
             AppState::Editing(_) => {
                 vec![

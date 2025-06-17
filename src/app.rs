@@ -198,9 +198,45 @@ impl App {
         // Try to create command executor
         let executor = CommandExecutor::new().ok();
 
+        // Create some sample templates for testing
+        let mut templates = Vec::new();
+        
+        let mut get_command = CurlCommand::default();
+        get_command.name = "GET Example".to_string();
+        get_command.url = "https://httpbin.org/get".to_string();
+        get_command.method = Some(crate::models::command::HttpMethod::GET);
+        
+        templates.push(CommandTemplate {
+            id: "template_1".to_string(),
+            name: "GET Example".to_string(),
+            description: Some("Simple GET request".to_string()),
+            command: get_command,
+            category: Some("Examples".to_string()),
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        });
+        
+        let mut post_command = CurlCommand::default();
+        post_command.name = "POST JSON".to_string();
+        post_command.url = "https://httpbin.org/post".to_string();
+        post_command.method = Some(crate::models::command::HttpMethod::POST);
+        post_command.add_header("Content-Type".to_string(), "application/json".to_string());
+        post_command.body = Some(crate::models::command::RequestBody::Raw(r#"{"key": "value"}"#.to_string()));
+        
+        templates.push(CommandTemplate {
+            id: "template_2".to_string(),
+            name: "POST JSON".to_string(),
+            description: Some("POST with JSON body".to_string()),
+            command: post_command,
+            category: Some("Examples".to_string()),
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        });
+
         Self {
             environments,
             executor,
+            templates,
             ..Self::default()
         }
     }
@@ -275,11 +311,21 @@ impl App {
             }
             // Navigate fields with Up/Down arrows
             (KeyCode::Up, KeyModifiers::NONE) => {
-                self.navigate_field_up();
+                if self.ui_state.selected_template.is_some() {
+                    // Navigate templates
+                    self.navigate_template_up();
+                } else {
+                    self.navigate_field_up();
+                }
                 false
             }
             (KeyCode::Down, KeyModifiers::NONE) => {
-                self.navigate_field_down();
+                if self.ui_state.selected_template.is_some() {
+                    // Navigate templates
+                    self.navigate_template_down();
+                } else {
+                    self.navigate_field_down();
+                }
                 false
             }
             // Navigate fields with Left/Right arrows
@@ -288,7 +334,13 @@ impl App {
                 false
             }
             (KeyCode::Right, KeyModifiers::NONE) => {
-                self.navigate_field_right();
+                if self.ui_state.selected_template.is_some() {
+                    // From templates, go to Method field
+                    self.ui_state.selected_template = None;
+                    self.ui_state.selected_field = SelectedField::Url(UrlField::Method);
+                } else {
+                    self.navigate_field_right();
+                }
                 false
             }
             // Execute command with F5 or Ctrl+R (reliable options)
@@ -296,9 +348,17 @@ impl App {
                 self.execute_command();
                 false
             }
-            // Edit current field
+            // Edit current field or load template
             (KeyCode::Enter, KeyModifiers::NONE) => {
-                self.start_editing_field();
+                if let Some(template_idx) = self.ui_state.selected_template {
+                    // Load the selected template
+                    self.load_template(template_idx);
+                    // Clear template selection and go to URL field
+                    self.ui_state.selected_template = None;
+                    self.ui_state.selected_field = SelectedField::Url(UrlField::Url);
+                } else {
+                    self.start_editing_field();
+                }
                 false
             }
             // Toggle panels
@@ -412,38 +472,83 @@ impl App {
 
     /// Navigate to the field to the left of the current one
     fn navigate_field_left(&mut self) {
-        // This is used for navigating between key-value pairs
+        // Navigate left through different UI sections: Templates ← Method ← URL
         match &self.ui_state.selected_field {
-            SelectedField::Headers(idx) => {
-                // Toggle between key and value
-                if let Some(_header) = self.current_command.headers.get(*idx) {
-                    // Toggle header enabled state
-                    if let Some(header) = self.current_command.headers.get_mut(*idx) {
-                        header.enabled = !header.enabled;
+            SelectedField::Url(UrlField::Url) => {
+                // From URL field, go to Method
+                self.ui_state.selected_field = SelectedField::Url(UrlField::Method);
+            }
+            SelectedField::Url(UrlField::Method) => {
+                // From Method, go to Templates (always select templates, even if empty)
+                self.ui_state.selected_template = Some(0);
+                // Don't set a selected field when templates are focused - templates take precedence
+            }
+            _ => {
+                // For other fields, keep existing toggle behavior
+                match &self.ui_state.selected_field {
+                    SelectedField::Headers(idx) => {
+                        // Toggle header enabled state
+                        if let Some(header) = self.current_command.headers.get_mut(*idx) {
+                            header.enabled = !header.enabled;
+                        }
                     }
+                    SelectedField::Url(UrlField::QueryParam(idx)) => {
+                        // Toggle query param enabled state
+                        if let Some(param) = self.current_command.query_params.get_mut(*idx) {
+                            param.enabled = !param.enabled;
+                        }
+                    }
+                    SelectedField::Options(idx) => {
+                        // Toggle option enabled state
+                        if let Some(option) = self.current_command.options.get_mut(*idx) {
+                            option.enabled = !option.enabled;
+                        }
+                    }
+                    _ => {}
                 }
             }
-            SelectedField::Url(UrlField::QueryParam(idx)) => {
-                // Toggle query param enabled state
-                if let Some(param) = self.current_command.query_params.get_mut(*idx) {
-                    param.enabled = !param.enabled;
-                }
-            }
-            SelectedField::Options(idx) => {
-                // Toggle option enabled state
-                if let Some(option) = self.current_command.options.get_mut(*idx) {
-                    option.enabled = !option.enabled;
-                }
-            }
-            _ => {}
         }
     }
 
     /// Navigate to the field to the right of the current one
     fn navigate_field_right(&mut self) {
-        // This is used for navigating between key-value pairs
-        // For now, we'll just use it as an alias for Enter to edit the field
-        self.start_editing_field();
+        // Navigate right through different UI sections: Templates → Method → URL
+        match &self.ui_state.selected_field {
+            SelectedField::Url(UrlField::Method) => {
+                // From Method, go to URL
+                self.ui_state.selected_field = SelectedField::Url(UrlField::Url);
+            }
+            SelectedField::Url(UrlField::Url) => {
+                // From URL, stay in URL (no further right navigation)
+            }
+            _ => {
+                // For other fields, keep existing behavior
+                match &self.ui_state.selected_field {
+                    SelectedField::Headers(idx) => {
+                        // Toggle between key and value
+                        if let Some(_header) = self.current_command.headers.get(*idx) {
+                            // Toggle header enabled state
+                            if let Some(header) = self.current_command.headers.get_mut(*idx) {
+                                header.enabled = !header.enabled;
+                            }
+                        }
+                    }
+                    SelectedField::Url(UrlField::QueryParam(idx)) => {
+                        // Toggle query param enabled state
+                        if let Some(param) = self.current_command.query_params.get_mut(*idx) {
+                            param.enabled = !param.enabled;
+                        }
+                    }
+                    SelectedField::Options(idx) => {
+                        // Toggle option enabled state
+                        if let Some(option) = self.current_command.options.get_mut(*idx) {
+                            option.enabled = !option.enabled;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
     }
 
     /// Start editing the current field
@@ -769,6 +874,24 @@ impl App {
     pub fn load_template(&mut self, index: usize) {
         if let Some(template) = self.templates.get(index) {
             self.current_command = template.command.clone();
+        }
+    }
+
+    /// Navigate to the template above the current one
+    fn navigate_template_up(&mut self) {
+        if let Some(current_idx) = self.ui_state.selected_template {
+            if current_idx > 0 {
+                self.ui_state.selected_template = Some(current_idx - 1);
+            }
+        }
+    }
+
+    /// Navigate to the template below the current one
+    fn navigate_template_down(&mut self) {
+        if let Some(current_idx) = self.ui_state.selected_template {
+            if current_idx < self.templates.len().saturating_sub(1) {
+                self.ui_state.selected_template = Some(current_idx + 1);
+            }
         }
     }
 

@@ -72,11 +72,11 @@ impl<'a> CommandBuilder<'a> {
             url
         };
 
-        // Determine if URL is selected
+        // Determine if URL is selected (but not when templates are focused)
         let is_url_selected = matches!(
             self.app.ui_state.selected_field,
             SelectedField::Url(UrlField::Url)
-        );
+        ) && self.app.ui_state.selected_template.is_none();
 
         // Style for URL based on selection and editing state
         let url_style = if is_editing_url {
@@ -462,11 +462,11 @@ impl<'a> CommandBuilder<'a> {
     fn render_method_selection(&self, frame: &mut Frame, area: Rect) {
         let current_method = self.app.current_command.method.as_ref().unwrap_or(&HttpMethod::GET).to_string();
         
-        // Determine if method is selected
+        // Determine if method is selected (but not when templates are focused)
         let is_method_selected = matches!(
             self.app.ui_state.selected_field,
             SelectedField::Url(UrlField::Method)
-        );
+        ) && self.app.ui_state.selected_template.is_none();
 
         // Style for method based on selection state
         let method_style = if is_method_selected {

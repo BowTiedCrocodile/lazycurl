@@ -74,16 +74,31 @@ impl<'a> TemplatesTree<'a> {
 
     /// Render the templates tree
     pub fn render(&self, frame: &mut Frame, area: Rect) {
-        // Create block
+        // Check if templates panel is focused
+        let is_focused = self.app.ui_state.selected_template.is_some();
+        
+        // Create block with appropriate border style
         let block = Block::default()
             .title("Templates")
             .borders(Borders::ALL)
-            .style(self.theme.border_style());
+            .border_style(if is_focused {
+                self.theme.active_border_style()
+            } else {
+                self.theme.border_style()
+            });
 
         // Create text
         // Create text
         let text = if self.app.templates.is_empty() {
-            Text::from("No templates")
+            // Show "No templates" but with selection style if focused
+            let style = if is_focused {
+                self.theme.selected_style()
+            } else {
+                self.theme.text_style()
+            };
+            Text::from(vec![Line::from(vec![
+                Span::styled("No templates", style)
+            ])])
         } else {
             // Create lines for templates grouped by category
             let mut lines = Vec::new();
