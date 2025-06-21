@@ -825,8 +825,8 @@ impl App {
 
         let start_time = Instant::now();
         
-        // Split command into arguments
-        let args: Vec<&str> = command.split_whitespace().collect();
+        // Parse command properly respecting quotes
+        let args = App::parse_command_args(command);
         if args.is_empty() || args[0] != "curl" {
             self.output = Some("Error: Invalid curl command".to_string());
             return;
@@ -1107,5 +1107,135 @@ impl App {
             }
             _ => false,
         }
+    }
+
+    /// Parse command arguments properly respecting quotes
+    fn parse_command_args(command: &str) -> Vec<String> {
+        let mut args = Vec::new();
+        let mut current_arg = String::new();
+        let mut in_single_quote = false;
+        let mut in_double_quote = false;
+        let mut chars = command.chars().peekable();
+
+        while let Some(ch) = chars.next() {
+            match ch {
+                '\'' if !in_double_quote => {
+                    if in_single_quote {
+                        // End of single-quoted string
+                        in_single_quote = false;
+                    } else {
+                        // Start of single-quoted string
+                        in_single_quote = true;
+                    }
+                }
+                '"' if !in_single_quote => {
+                    if in_double_quote {
+                        // End of double-quoted string
+                        in_double_quote = false;
+                    } else {
+                        // Start of double-quoted string
+                        in_double_quote = true;
+                    }
+                }
+                ' ' | '\t' if !in_single_quote && !in_double_quote => {
+                    // Whitespace outside quotes - end current argument
+                    if !current_arg.is_empty() {
+                        args.push(current_arg.clone());
+                        current_arg.clear();
+                    }
+                    // Skip additional whitespace
+                    while let Some(&next_ch) = chars.peek() {
+                        if next_ch == ' ' || next_ch == '\t' {
+                            chars.next();
+                        } else {
+                            break;
+                        }
+                    }
+                }
+                '\\' if in_single_quote => {
+                    // Handle escaped characters in single quotes (limited escaping)
+                    if let Some(&next_ch) = chars.peek() {
+                        if next_ch == '\'' {
+                            chars.next(); // consume the escaped quote
+                            current_arg.push('\'');
+                        } else {
+                            current_arg.push(ch);
+                        }
+                    } else {
+                        current_arg.push(ch);
+                    }
+                }
+                '\\' if in_double_quote => {
+                    // Handle escaped characters in double quotes
+                    if let Some(&next_ch) = chars.peek() {
+                        match next_ch {
+                            '"' | '\\' | '$' | '`' | '\n' => {
+                                chars.next(); // consume the escaped character
+                                current_arg.push(next_ch);
+                            }
+                            _ => {
+                                current_arg.push(ch);
+                            }
+                        }
+                    } else {
+                        current_arg.push(ch);
+                    }
+                }
+                _ => {
+                    current_arg.push(ch);
+                }
+            }
+        }
+
+        // Add the last argument if there is one
+        if !current_arg.is_empty() {
+            args.push(current_arg);
+        }
+
+        args
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_command_args() {
+        // Test simple command
+        let args = App::parse_command_args("curl https://example.com");
+        assert_eq!(args, vec!["curl", "https://example.com"]);
+
+        // Test command with single-quoted JSON
+        let args = App::parse_command_args("curl -X POST -H 'Content-Type: application/json' -d '{\"key\": \"value\"}' https://httpbin.org/post");
+        assert_eq!(args, vec![
+            "curl",
+            "-X",
+            "POST",
+            "-H",
+            "Content-Type: application/json",
+            "-d",
+            "{\"key\": \"value\"}",
+            "https://httpbin.org/post"
+        ]);
+
+        // Test command with double-quoted arguments
+        let args = App::parse_command_args("curl -H \"Authorization: Bearer token123\" https://api.example.com");
+        assert_eq!(args, vec![
+            "curl",
+            "-H",
+            "Authorization: Bearer token123",
+            "https://api.example.com"
+        ]);
+
+        // Test command with mixed quotes
+        let args = App::parse_command_args("curl -d '{\"name\": \"John\"}' -H \"Content-Type: application/json\"");
+        assert_eq!(args, vec![
+            "curl",
+            "-d",
+            "{\"name\": \"John\"}",
+            "-H",
+            "Content-Type: application/json"
+        ]);
     }
 }

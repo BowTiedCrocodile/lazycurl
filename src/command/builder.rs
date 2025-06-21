@@ -131,35 +131,43 @@ impl CommandBuilder {
     /// Format a curl command for display
     fn format_curl_command(args: &[String]) -> String {
         // Format the command for better readability
-        // This could include line breaks for long commands
-        let mut formatted = String::new();
-        let mut current_line_length = 0;
-        let max_line_length = 80;
+        // Keep it simple - just join with spaces for now to avoid line break issues
+        let mut formatted_args = Vec::new();
         
-        for (i, arg) in args.iter().enumerate() {
-            if i > 0 && current_line_length + arg.len() > max_line_length {
-                formatted.push_str(" \\\n      ");
-                current_line_length = 6;
-            }
-            
-            if i > 0 {
-                formatted.push(' ');
-                current_line_length += 1;
-            }
-            
+        for arg in args {
             // Handle arguments that need quoting
-            if arg.contains(' ') && !arg.starts_with('"') && !arg.starts_with('\'') {
-                formatted.push('"');
-                formatted.push_str(arg);
-                formatted.push('"');
-                current_line_length += arg.len() + 2;
+            if CommandBuilder::needs_quoting(arg) && !arg.starts_with('"') && !arg.starts_with('\'') {
+                // Use single quotes for all arguments (including JSON) to avoid escaping
+                let escaped_arg = arg.replace('\'', "'\"'\"'");
+                formatted_args.push(format!("'{}'", escaped_arg));
             } else {
-                formatted.push_str(arg);
-                current_line_length += arg.len();
+                formatted_args.push(arg.clone());
             }
         }
         
-        formatted
+        formatted_args.join(" ")
+    }
+
+    /// Check if an argument needs quoting for shell safety
+    fn needs_quoting(arg: &str) -> bool {
+        // Don't quote URLs - they should be handled as-is
+        if arg.starts_with("http://") || arg.starts_with("https://") || arg.starts_with("ftp://") {
+            return false;
+        }
+        
+        // Check for characters that need shell escaping
+        arg.chars().any(|c| match c {
+            ' ' | '\t' | '\n' | '\r' | // Whitespace
+            '"' | '\'' | '\\' | // Quote and escape characters
+            '|' | '&' | ';' | '(' | ')' | // Shell operators
+            '<' | '>' | // Redirection
+            '$' | '`' | // Variable expansion and command substitution
+            '*' | '?' | '[' | ']' | // Glob patterns
+            '{' | '}' | // Brace expansion (common in JSON)
+            '!' | '#' | // History expansion and comments
+            '~' => true, // Tilde expansion
+            _ => false,
+        }) || arg.is_empty() // Empty strings also need quoting
     }
 }
 
@@ -210,7 +218,7 @@ mod tests {
         let environment = Environment::new("test".to_string());
         
         let result = CommandBuilder::build(&command, &environment);
-        assert_eq!(result, "curl -H \"Content-Type: application/json\" https://example.com");
+        assert_eq!(result, "curl -H 'Content-Type: application/json' https://example.com");
     }
 
     #[test]
@@ -262,5 +270,48 @@ mod tests {
         let result = CommandBuilder::substitute_env_vars(input, &environment);
         
         assert_eq!(result, "https://default.example.com/users");
+    }
+
+    #[test]
+    fn test_build_command_with_json_body() {
+        let mut command = CurlCommand::default();
+        command.url = "https://example.com".to_string();
+        command.method = Some(HttpMethod::POST);
+        command.headers.push(Header {
+            id: "1".to_string(),
+            key: "Content-Type".to_string(),
+            value: "application/json".to_string(),
+            enabled: true,
+        });
+        command.body = Some(RequestBody::Raw(r#"{"key": "value", "number": 42}"#.to_string()));
+        
+        let environment = Environment::new("test".to_string());
+        
+        let result = CommandBuilder::build(&command, &environment);
+        // JSON should be properly quoted with single quotes (no escaping needed)
+        assert!(result.contains(r#"'{"key": "value", "number": 42}'"#));
+    }
+
+    #[test]
+    fn test_needs_quoting() {
+        // Test cases that should need quoting
+        assert!(CommandBuilder::needs_quoting(r#"{"key": "value"}"#)); // JSON with braces and quotes
+        assert!(CommandBuilder::needs_quoting("hello world")); // Space
+        assert!(CommandBuilder::needs_quoting("test&more")); // Ampersand
+        assert!(CommandBuilder::needs_quoting("test|more")); // Pipe
+        assert!(CommandBuilder::needs_quoting("test$var")); // Dollar sign
+        assert!(CommandBuilder::needs_quoting("")); // Empty string
+        
+        // Test cases that should NOT need quoting
+        assert!(!CommandBuilder::needs_quoting("simple")); // Simple string
+        assert!(!CommandBuilder::needs_quoting("test123")); // Alphanumeric
+        assert!(!CommandBuilder::needs_quoting("test-value")); // Hyphen is safe
+        assert!(!CommandBuilder::needs_quoting("test_value")); // Underscore is safe
+        assert!(!CommandBuilder::needs_quoting("test.value")); // Dot is safe
+        
+        // URLs should NOT be quoted, even with special characters
+        assert!(!CommandBuilder::needs_quoting("https://example.com?param={\"key\":\"value\"}")); // URL with JSON
+        assert!(!CommandBuilder::needs_quoting("http://example.com/path?q=test&other=value")); // URL with query params
+        assert!(!CommandBuilder::needs_quoting("https://api.example.com/users?filter={\"active\":true}")); // Complex URL
     }
 }
