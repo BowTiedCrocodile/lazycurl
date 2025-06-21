@@ -302,37 +302,113 @@ impl<'a> CommandBuilder<'a> {
         // Check if we're editing the body
         let is_editing_body = matches!(&self.app.state, AppState::Editing(EditField::Body));
 
-        // Choose border style based on state
-        let border_style = if is_editing_body {
-            self.theme.editing_border_style()
-        } else if is_content_selected {
-            self.theme.active_border_style()
+        if is_editing_body {
+            // Create a clone of the TextArea for rendering with proper styling
+            let mut textarea = self.app.ui_state.body_textarea.clone();
+            
+            // Set the block style for editing mode
+            textarea.set_block(
+                Block::default()
+                    .title("Request Body [EDIT] - Press F2 to save, Esc to cancel")
+                    .borders(Borders::ALL)
+                    .style(self.theme.editing_border_style())
+            );
+            
+            // Set cursor style to make it more visible
+            textarea.set_cursor_style(
+                ratatui::style::Style::default()
+                    .bg(ratatui::style::Color::Yellow)
+                    .fg(ratatui::style::Color::Black)
+            );
+            
+            // Render the TextArea directly - it should implement Widget
+            // Render TextArea content with cursor indication
+            let content = textarea.lines().join("\n");
+            let (cursor_row, cursor_col) = textarea.cursor();
+            
+            let mut text_lines = Vec::new();
+            for (row_idx, line) in content.lines().enumerate() {
+                if row_idx == cursor_row {
+                    // Add cursor indicator with yellow background
+                    let mut line_spans = Vec::new();
+                    
+                    // Add text before cursor
+                    if cursor_col > 0 {
+                        let before_cursor = if cursor_col <= line.len() {
+                            &line[..cursor_col]
+                        } else {
+                            line
+                        };
+                        line_spans.push(Span::styled(before_cursor, self.theme.editing_style()));
+                    }
+                    
+                    // Add cursor with yellow background
+                    let cursor_char = if cursor_col < line.len() {
+                        line.chars().nth(cursor_col).unwrap_or(' ').to_string()
+                    } else {
+                        " ".to_string()
+                    };
+                    line_spans.push(Span::styled(
+                        cursor_char,
+                        ratatui::style::Style::default()
+                            .bg(ratatui::style::Color::Yellow)
+                            .fg(ratatui::style::Color::Black)
+                    ));
+                    
+                    // Add text after cursor
+                    if cursor_col < line.len() {
+                        let after_cursor = &line[cursor_col + 1..];
+                        if !after_cursor.is_empty() {
+                            line_spans.push(Span::styled(after_cursor, self.theme.editing_style()));
+                        }
+                    }
+                    
+                    text_lines.push(Line::from(line_spans));
+                } else {
+                    text_lines.push(Line::from(Span::styled(line, self.theme.editing_style())));
+                }
+            }
+            
+            // If cursor is beyond all lines, add an empty line with cursor
+            if cursor_row >= content.lines().count() {
+                text_lines.push(Line::from(Span::styled(
+                    " ",
+                    ratatui::style::Style::default()
+                        .bg(ratatui::style::Color::Yellow)
+                        .fg(ratatui::style::Color::Black)
+                )));
+            }
+            
+            let text = Text::from(text_lines);
+            let block = Block::default()
+                .title("Request Body [EDIT] - Press F2 to save, Esc to cancel")
+                .borders(Borders::ALL)
+                .style(self.theme.editing_border_style());
+            
+            let paragraph = Paragraph::new(text).block(block);
+            frame.render_widget(paragraph, area);
         } else {
-            self.theme.border_style()
-        };
+            // Choose border style based on state
+            let border_style = if is_content_selected {
+                self.theme.active_border_style()
+            } else {
+                self.theme.border_style()
+            };
 
-        // Add title indicator for editing mode
-        let title = if is_editing_body {
-            "Request Body [EDIT]"
-        } else if is_content_selected {
-            "Request Body "
-        } else {
-            "Request Body"
-        };
+            // Add title indicator
+            let title = if is_content_selected {
+                "Request Body "
+            } else {
+                "Request Body"
+            };
 
-        let block = Block::default()
-            .title(title)
-            .borders(Borders::ALL)
-            .style(border_style);
+            let block = Block::default()
+                .title(title)
+                .borders(Borders::ALL)
+                .style(border_style);
 
-        // Check if we're editing the body
-        let text = if is_editing_body {
-            // Add blinking cursor indicator for editing mode
-            let cursor = if self.app.ui_state.cursor_visible { "█" } else { " " };
-            let content_with_cursor = format!("{}{}", self.app.ui_state.edit_buffer, cursor);
-            Text::from(vec![Line::from(Span::styled(content_with_cursor, self.theme.editing_style()))])
-        } else {
-            match &self.app.current_command.body {
+            // Display current body content
+            let text = match &self.app.current_command.body {
                 Some(body) => match body {
                     crate::models::command::RequestBody::Raw(content) => {
                         let style = if is_content_selected {
@@ -340,7 +416,7 @@ impl<'a> CommandBuilder<'a> {
                         } else {
                             self.theme.text_style()
                         };
-                        Text::from(vec![Line::from(Span::styled(content, style))])
+                        Text::from(content.lines().map(|line| Line::from(Span::styled(line, style))).collect::<Vec<_>>())
                     }
                     crate::models::command::RequestBody::FormData(items) => {
                         let mut lines = Vec::new();
@@ -389,11 +465,11 @@ impl<'a> CommandBuilder<'a> {
                     };
                     Text::from(vec![Line::from(Span::styled("No request body", style))])
                 },
-            }
-        };
+            };
 
-        let paragraph = Paragraph::new(text).block(block);
-        frame.render_widget(paragraph, area);
+            let paragraph = Paragraph::new(text).block(block);
+            frame.render_widget(paragraph, area);
+        }
     }
 
     /// Render options tab

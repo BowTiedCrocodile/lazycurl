@@ -4,6 +4,7 @@ use crate::models::template::CommandTemplate;
 use crate::execution::executor::{CommandExecutor, ExecutionResult};
 use crate::command::builder::CommandBuilder;
 use std::collections::HashMap;
+use tui_textarea::{TextArea, Input};
 
 /// Application state
 pub struct App {
@@ -92,6 +93,8 @@ pub struct UiState {
     pub cursor_visible: bool,
     /// Cursor blink counter for slower blinking
     pub cursor_blink_counter: u8,
+    /// Text area for body editing
+    pub body_textarea: TextArea<'static>,
 }
 
 /// Selected field in each tab
@@ -179,6 +182,7 @@ impl Default for App {
                 method_dropdown_index: 0,
                 cursor_visible: true,
                 cursor_blink_counter: 0,
+                body_textarea: TextArea::default(),
             },
             executor: None,
         }
@@ -590,18 +594,22 @@ impl App {
                         return false;
                     }
                     BodyField::Content => {
-                        if let Some(body) = &self.current_command.body {
+                        // Initialize the TextArea with current body content
+                        let content = if let Some(body) = &self.current_command.body {
                             match body {
-                                crate::models::command::RequestBody::Raw(content) => {
-                                    self.ui_state.edit_buffer = content.clone();
-                                }
-                                _ => {
-                                    self.ui_state.edit_buffer = String::new();
-                                }
+                                crate::models::command::RequestBody::Raw(content) => content.clone(),
+                                _ => String::new(),
                             }
                         } else {
-                            self.ui_state.edit_buffer = String::new();
-                        }
+                            String::new()
+                        };
+                        
+                        // Create a new TextArea with the content
+                        self.ui_state.body_textarea = TextArea::from(content.lines().map(|s| s.to_string()).collect::<Vec<_>>());
+                        
+                        // Set cursor style to make it more visible
+                        self.ui_state.body_textarea.set_cursor_style(ratatui::style::Style::default().bg(ratatui::style::Color::White).fg(ratatui::style::Color::Black));
+                        
                         EditField::Body
                     }
                 }
@@ -628,78 +636,100 @@ impl App {
     fn handle_editing_field_key(&mut self, key_event: &crossterm::event::KeyEvent, field: &EditField) -> bool {
         use crossterm::event::KeyCode;
 
-        match key_event.code {
-            KeyCode::Enter => {
-                // Save the edited value
-                match field {
-                    EditField::Url => {
-                        self.current_command.url = self.ui_state.edit_buffer.clone();
-                    }
-                    EditField::Method => {
-                        // Parse method from string
-                        let method_str = self.ui_state.edit_buffer.to_uppercase();
-                        let method = match method_str.as_str() {
-                            "GET" => crate::models::command::HttpMethod::GET,
-                            "POST" => crate::models::command::HttpMethod::POST,
-                            "PUT" => crate::models::command::HttpMethod::PUT,
-                            "DELETE" => crate::models::command::HttpMethod::DELETE,
-                            "PATCH" => crate::models::command::HttpMethod::PATCH,
-                            "HEAD" => crate::models::command::HttpMethod::HEAD,
-                            "OPTIONS" => crate::models::command::HttpMethod::OPTIONS,
-                            _ => crate::models::command::HttpMethod::GET,
-                        };
-                        self.current_command.method = Some(method);
-                    }
-                    EditField::HeaderKey(idx) => {
-                        if let Some(header) = self.current_command.headers.get_mut(*idx) {
-                            header.key = self.ui_state.edit_buffer.clone();
-                        }
-                    }
-                    EditField::HeaderValue(idx) => {
-                        if let Some(header) = self.current_command.headers.get_mut(*idx) {
-                            header.value = self.ui_state.edit_buffer.clone();
-                        }
-                    }
-                    EditField::QueryParamKey(idx) => {
-                        if let Some(param) = self.current_command.query_params.get_mut(*idx) {
-                            param.key = self.ui_state.edit_buffer.clone();
-                        }
-                    }
-                    EditField::QueryParamValue(idx) => {
-                        if let Some(param) = self.current_command.query_params.get_mut(*idx) {
-                            param.value = self.ui_state.edit_buffer.clone();
-                        }
-                    }
-                    EditField::Body => {
-                        // Set body content
-                        let content = self.ui_state.edit_buffer.clone();
-                        self.current_command.body = Some(crate::models::command::RequestBody::Raw(content));
-                    }
-                    EditField::OptionValue(idx) => {
-                        if let Some(option) = self.current_command.options.get_mut(*idx) {
-                            option.value = Some(self.ui_state.edit_buffer.clone());
-                        }
-                    }
+        // Handle body editing with TextArea
+        if matches!(field, EditField::Body) {
+            match key_event.code {
+                KeyCode::Esc => {
+                    // Cancel editing
+                    self.state = AppState::Normal;
+                    false
                 }
-                self.state = AppState::Normal;
-                false
+                KeyCode::F(2) => {
+                    // Save body content (F2 to save, since Enter is used for new lines)
+                    let content = self.ui_state.body_textarea.lines().join("\n");
+                    self.current_command.body = Some(crate::models::command::RequestBody::Raw(content));
+                    self.state = AppState::Normal;
+                    false
+                }
+                _ => {
+                    // Pass all other key events to the TextArea
+                    self.ui_state.body_textarea.input(Input::from(key_event.clone()));
+                    false
+                }
             }
-            KeyCode::Esc => {
-                // Cancel editing
-                self.state = AppState::Normal;
-                false
+        } else {
+            // Handle other fields with simple edit buffer
+            match key_event.code {
+                KeyCode::Enter => {
+                    // Save the edited value
+                    match field {
+                        EditField::Url => {
+                            self.current_command.url = self.ui_state.edit_buffer.clone();
+                        }
+                        EditField::Method => {
+                            // Parse method from string
+                            let method_str = self.ui_state.edit_buffer.to_uppercase();
+                            let method = match method_str.as_str() {
+                                "GET" => crate::models::command::HttpMethod::GET,
+                                "POST" => crate::models::command::HttpMethod::POST,
+                                "PUT" => crate::models::command::HttpMethod::PUT,
+                                "DELETE" => crate::models::command::HttpMethod::DELETE,
+                                "PATCH" => crate::models::command::HttpMethod::PATCH,
+                                "HEAD" => crate::models::command::HttpMethod::HEAD,
+                                "OPTIONS" => crate::models::command::HttpMethod::OPTIONS,
+                                _ => crate::models::command::HttpMethod::GET,
+                            };
+                            self.current_command.method = Some(method);
+                        }
+                        EditField::HeaderKey(idx) => {
+                            if let Some(header) = self.current_command.headers.get_mut(*idx) {
+                                header.key = self.ui_state.edit_buffer.clone();
+                            }
+                        }
+                        EditField::HeaderValue(idx) => {
+                            if let Some(header) = self.current_command.headers.get_mut(*idx) {
+                                header.value = self.ui_state.edit_buffer.clone();
+                            }
+                        }
+                        EditField::QueryParamKey(idx) => {
+                            if let Some(param) = self.current_command.query_params.get_mut(*idx) {
+                                param.key = self.ui_state.edit_buffer.clone();
+                            }
+                        }
+                        EditField::QueryParamValue(idx) => {
+                            if let Some(param) = self.current_command.query_params.get_mut(*idx) {
+                                param.value = self.ui_state.edit_buffer.clone();
+                            }
+                        }
+                        EditField::Body => {
+                            // This case is handled above
+                        }
+                        EditField::OptionValue(idx) => {
+                            if let Some(option) = self.current_command.options.get_mut(*idx) {
+                                option.value = Some(self.ui_state.edit_buffer.clone());
+                            }
+                        }
+                    }
+                    self.state = AppState::Normal;
+                    false
+                }
+                KeyCode::Esc => {
+                    // Cancel editing
+                    self.state = AppState::Normal;
+                    false
+                }
+                KeyCode::Char(c) => {
+                    // Add character to edit buffer
+                    self.ui_state.edit_buffer.push(c);
+                    false
+                }
+                KeyCode::Backspace => {
+                    // Remove last character from edit buffer
+                    self.ui_state.edit_buffer.pop();
+                    false
+                }
+                _ => false,
             }
-            KeyCode::Char(c) => {
-                // Add character to edit buffer
-                self.ui_state.edit_buffer.push(c);
-                false
-            }
-            KeyCode::Backspace => {
-                // Remove last character from edit buffer
-                self.ui_state.edit_buffer.pop();
-                false
-            }
-            _ => false,
         }
     }
 

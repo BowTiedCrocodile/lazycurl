@@ -9,6 +9,7 @@ authors = ["TVRL Team"]
 # Terminal UI
 ratatui = "0.24.0"
 crossterm = "0.27.0"
+tui-textarea = "0.4.0"
 
 # Async runtime
 tokio = { version = "1.32.0", features = ["full"] }
