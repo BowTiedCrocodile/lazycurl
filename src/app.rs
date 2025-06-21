@@ -478,7 +478,7 @@ impl App {
 
     /// Navigate to the field to the left of the current one
     fn navigate_field_left(&mut self) {
-        // Navigate left through different UI sections: Templates ← Method ← URL
+        // Navigate left through different UI sections: Templates ← Method ← URL Container
         match &self.ui_state.selected_field {
             SelectedField::Url(UrlField::Url) => {
                 // From URL field, go to Method
@@ -489,6 +489,41 @@ impl App {
                 self.ui_state.selected_template = Some(0);
                 // Don't set a selected field when templates are focused - templates take precedence
             }
+            // From any field in the URL container (except URL and Method), go back to Method
+            SelectedField::Headers(_) | SelectedField::Body(_) | SelectedField::Options(_) => {
+                self.ui_state.selected_field = SelectedField::Url(UrlField::Method);
+            }
+            SelectedField::Url(UrlField::QueryParam(_)) => {
+                // From query params, also go back to Method to maintain navigation consistency
+                self.ui_state.selected_field = SelectedField::Url(UrlField::Method);
+            }
+        }
+    }
+
+    /// Navigate to the field to the right of the current one
+    fn navigate_field_right(&mut self) {
+        // Navigate right through different UI sections: Templates → Method → URL Container
+        match &self.ui_state.selected_field {
+            SelectedField::Url(UrlField::Method) => {
+                // From Method, go to the appropriate field based on active tab
+                match self.ui_state.active_tab {
+                    Tab::Url => {
+                        self.ui_state.selected_field = SelectedField::Url(UrlField::Url);
+                    }
+                    Tab::Headers => {
+                        self.ui_state.selected_field = SelectedField::Headers(0);
+                    }
+                    Tab::Body => {
+                        self.ui_state.selected_field = SelectedField::Body(BodyField::Content);
+                    }
+                    Tab::Options => {
+                        self.ui_state.selected_field = SelectedField::Options(0);
+                    }
+                }
+            }
+            SelectedField::Url(UrlField::Url) => {
+                // From URL, stay in URL (no further right navigation)
+            }
             _ => {
                 // For other fields, keep existing toggle behavior
                 match &self.ui_state.selected_field {
@@ -496,47 +531,6 @@ impl App {
                         // Toggle header enabled state
                         if let Some(header) = self.current_command.headers.get_mut(*idx) {
                             header.enabled = !header.enabled;
-                        }
-                    }
-                    SelectedField::Url(UrlField::QueryParam(idx)) => {
-                        // Toggle query param enabled state
-                        if let Some(param) = self.current_command.query_params.get_mut(*idx) {
-                            param.enabled = !param.enabled;
-                        }
-                    }
-                    SelectedField::Options(idx) => {
-                        // Toggle option enabled state
-                        if let Some(option) = self.current_command.options.get_mut(*idx) {
-                            option.enabled = !option.enabled;
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        }
-    }
-
-    /// Navigate to the field to the right of the current one
-    fn navigate_field_right(&mut self) {
-        // Navigate right through different UI sections: Templates → Method → URL
-        match &self.ui_state.selected_field {
-            SelectedField::Url(UrlField::Method) => {
-                // From Method, go to URL
-                self.ui_state.selected_field = SelectedField::Url(UrlField::Url);
-            }
-            SelectedField::Url(UrlField::Url) => {
-                // From URL, stay in URL (no further right navigation)
-            }
-            _ => {
-                // For other fields, keep existing behavior
-                match &self.ui_state.selected_field {
-                    SelectedField::Headers(idx) => {
-                        // Toggle between key and value
-                        if let Some(_header) = self.current_command.headers.get(*idx) {
-                            // Toggle header enabled state
-                            if let Some(header) = self.current_command.headers.get_mut(*idx) {
-                                header.enabled = !header.enabled;
-                            }
                         }
                     }
                     SelectedField::Url(UrlField::QueryParam(idx)) => {
