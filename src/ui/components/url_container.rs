@@ -42,7 +42,7 @@ impl<'a> UrlContainer<'a> {
 
         // Add title indicator for selection
         let title = if is_container_selected {
-            "URL Builder [SELECTED]"
+            "URL Builder "
         } else {
             "URL Builder"
         };
@@ -138,7 +138,7 @@ impl<'a> UrlContainer<'a> {
         let title = if is_editing_url {
             "URL [EDIT]"
         } else if is_url_selected {
-            "URL [SELECTED]"
+            "URL "
         } else {
             "URL"
         };
@@ -248,7 +248,7 @@ impl<'a> UrlContainer<'a> {
                 let status_indicator = if is_editing {
                     " [EDIT]"
                 } else if is_selected {
-                    " [SELECTED]"
+                    " "
                 } else {
                     ""
                 };
@@ -281,7 +281,7 @@ impl<'a> UrlContainer<'a> {
         };
         
         let title = if is_headers_selected {
-            "Headers [SELECTED]"
+            "Headers "
         } else {
             "Headers"
         };
@@ -333,7 +333,7 @@ impl<'a> UrlContainer<'a> {
                 let status_indicator = if is_editing {
                     " [EDIT]"
                 } else if is_selected {
-                    " [SELECTED]"
+                    " "
                 } else {
                     ""
                 };
@@ -378,7 +378,7 @@ impl<'a> UrlContainer<'a> {
         let title = if is_editing_body {
             "Request Body [EDIT]"
         } else if is_content_selected {
-            "Request Body [SELECTED]"
+            "Request Body "
         } else {
             "Request Body"
         };
@@ -471,7 +471,7 @@ impl<'a> UrlContainer<'a> {
         };
         
         let title = if is_options_selected {
-            "Curl Options [SELECTED]"
+            "Curl Options "
         } else {
             "Curl Options"
         };
@@ -521,7 +521,7 @@ impl<'a> UrlContainer<'a> {
                 let status_indicator = if is_editing {
                     " [EDIT]"
                 } else if is_selected {
-                    " [SELECTED]"
+                    " "
                 } else {
                     ""
                 };

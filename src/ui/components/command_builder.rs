@@ -114,7 +114,7 @@ impl<'a> CommandBuilder<'a> {
         let title = if is_editing_url {
             "URL [EDIT]"
         } else if is_url_selected {
-            "URL [SELECTED]"
+            "URL "
         } else {
             "URL"
         };
@@ -200,7 +200,7 @@ impl<'a> CommandBuilder<'a> {
                 let status_indicator = if is_editing {
                     " [EDIT]"
                 } else if is_selected {
-                    " [SELECTED]"
+                    ""
                 } else {
                     ""
                 };
@@ -270,7 +270,7 @@ impl<'a> CommandBuilder<'a> {
                 let status_indicator = if is_editing {
                     " [EDIT]"
                 } else if is_selected {
-                    " [SELECTED]"
+                    ""
                 } else {
                     ""
                 };
@@ -315,7 +315,7 @@ impl<'a> CommandBuilder<'a> {
         let title = if is_editing_body {
             "Request Body [EDIT]"
         } else if is_content_selected {
-            "Request Body [SELECTED]"
+            "Request Body "
         } else {
             "Request Body"
         };
@@ -443,7 +443,7 @@ impl<'a> CommandBuilder<'a> {
                 let status_indicator = if is_editing {
                     " [EDIT]"
                 } else if is_selected {
-                    " [SELECTED]"
+                    " "
                 } else {
                     ""
                 };
@@ -496,7 +496,7 @@ impl<'a> CommandBuilder<'a> {
 
         // Add title indicator with debug info
         let title = if is_method_selected {
-            "Method [SELECTED] - Press Enter to open dropdown"
+            "Method "
         } else {
             "Method"
         };
