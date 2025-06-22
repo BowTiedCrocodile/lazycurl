@@ -535,6 +535,42 @@ impl<'a> UrlContainer<'a> {
         }
     }
 
+    /// Get the appropriate shortcuts based on the current state
+    fn get_options_shortcuts(&self) -> String {
+        let is_options_selected = matches!(self.app.ui_state.selected_field, SelectedField::Options(_));
+        
+        if !is_options_selected {
+            return String::new();
+        }
+        
+        // Check if the selected option is a command line option or an active option
+        if let SelectedField::Options(idx) = self.app.ui_state.selected_field {
+            let is_command_line = idx >= self.app.current_command.options.len();
+            
+            if is_command_line {
+                // Command line option shortcuts
+                "↑/↓ Navigate | Enter Add option".to_string()
+            } else {
+                // Active option shortcuts
+                let option = &self.app.current_command.options[idx];
+                let curl_options = crate::command::options::CurlOptions::new();
+                let takes_value = if let Some(option_def) = curl_options.get_option(&option.flag) {
+                    option_def.takes_value
+                } else {
+                    false
+                };
+                
+                if takes_value {
+                    "↑/↓ Navigate | Space Toggle | Enter Edit value | Del Remove".to_string()
+                } else {
+                    "↑/↓ Navigate | Space Toggle | Del Remove".to_string()
+                }
+            }
+        } else {
+            String::new()
+        }
+    }
+
     /// Render options tab
     fn render_options_tab(&self, frame: &mut Frame, area: Rect) {
         // Determine if any option is selected
@@ -547,9 +583,14 @@ impl<'a> UrlContainer<'a> {
         };
         
         let title = if is_options_selected {
-            "Curl Options "
+            let shortcuts = self.get_options_shortcuts();
+            if !shortcuts.is_empty() {
+                format!("Curl Options  [{}]", shortcuts)
+            } else {
+                "Curl Options ".to_string()
+            }
         } else {
-            "Curl Options"
+            "Curl Options".to_string()
         };
         
         let block = Block::default()
@@ -572,19 +613,32 @@ impl<'a> UrlContainer<'a> {
         // Create a unified list of all options (both active and available)
         let mut lines = Vec::new();
         
+        // Calculate column widths for even spacing
+        let total_width = area.width as usize - 2; // Account for borders
+        let column_width = total_width / 4; // 4 columns: Status, Option, Value, Description
+        
+        // Helper function to pad or truncate text to fit column width
+        let format_column = |text: &str, width: usize| -> String {
+            if text.len() > width {
+                // Truncate with ellipsis if too long
+                format!("{}…", &text[0..width.saturating_sub(1)])
+            } else {
+                // Pad with spaces if too short
+                format!("{:<width$}", text, width = width)
+            }
+        };
+        
         // Add header row for the grid
         lines.push(Line::from(vec![
-            Span::styled("Status", self.theme.header_style()),
-            Span::raw(" | "),
-            Span::styled("Option", self.theme.header_style()),
-            Span::raw(" | "),
-            Span::styled("Value", self.theme.header_style()),
-            Span::raw(" | "),
-            Span::styled("Description", self.theme.header_style()),
+            Span::styled(format_column("Status", column_width), self.theme.header_style()),
+            Span::styled(format_column("Option", column_width), self.theme.header_style()),
+            Span::styled(format_column("Value", column_width), self.theme.header_style()),
+            Span::styled(format_column("Description", column_width), self.theme.header_style()),
         ]));
         
         // Add separator line
-        lines.push(Line::from("─────────────────────────────────────────────────────────────"));
+        let separator = "─".repeat(total_width);
+        lines.push(Line::from(separator));
         
         // First, add all active options
         for (idx, option) in self.app.current_command.options.iter().enumerate() {
@@ -696,14 +750,10 @@ impl<'a> UrlContainer<'a> {
             let status_indicator = if is_selected { " " } else { "" };
             
             lines.push(Line::from(vec![
-                Span::styled(status, style),
-                Span::raw(" | "),
-                Span::styled(flag, if is_selected { style } else { Style::default().fg(self.theme.primary) }),
-                Span::raw(" | "),
-                Span::styled(value_text_string.clone(), if is_selected { style } else { Style::default().fg(self.theme.secondary) }),
-                Span::raw(" | "),
-                Span::styled(description, style),
-                Span::styled(status_indicator, self.theme.selected_style()),
+                Span::styled(format_column(status, column_width), style),
+                Span::styled(format_column(flag, column_width), if is_selected { style } else { Style::default().fg(self.theme.primary) }),
+                Span::styled(format_column(&value_text_string, column_width), if is_selected { style } else { Style::default().fg(self.theme.secondary) }),
+                Span::styled(format!("{}{}", format_column(description, column_width.saturating_sub(1)), status_indicator), style),
             ]));
         }
         

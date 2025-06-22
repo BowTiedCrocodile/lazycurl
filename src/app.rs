@@ -381,6 +381,28 @@ impl App {
                 }
                 false
             }
+            // Remove option with Delete or Backspace
+            (KeyCode::Delete, KeyModifiers::NONE) | (KeyCode::Backspace, KeyModifiers::NONE) => {
+                if let SelectedField::Options(idx) = self.ui_state.selected_field {
+                    // Only remove if it's an active option (not a command line option)
+                    if !self.is_command_line_option_selected(idx) {
+                        self.remove_option(idx);
+                    }
+                }
+                false
+            }
+            // Toggle option enabled/disabled with Space
+            (KeyCode::Char(' '), KeyModifiers::NONE) => {
+                if let SelectedField::Options(idx) = self.ui_state.selected_field {
+                    // Only toggle if it's an active option (not a command line option)
+                    if !self.is_command_line_option_selected(idx) {
+                        if let Some(option) = self.current_command.options.get_mut(idx) {
+                            option.enabled = !option.enabled;
+                        }
+                    }
+                }
+                false
+            }
             // Toggle panels
             (KeyCode::Char('t'), KeyModifiers::CONTROL) => {
                 self.ui_state.templates_expanded = !self.ui_state.templates_expanded;
@@ -565,12 +587,6 @@ impl App {
                             param.enabled = !param.enabled;
                         }
                     }
-                    SelectedField::Options(idx) => {
-                        // Toggle option enabled state
-                        if let Some(option) = self.current_command.options.get_mut(*idx) {
-                            option.enabled = !option.enabled;
-                        }
-                    }
                     _ => {}
                 }
             }
@@ -638,10 +654,23 @@ impl App {
             }
             SelectedField::Options(idx) => {
                 if let Some(option) = self.current_command.options.get(*idx) {
-                    if let Some(value) = &option.value {
-                        self.ui_state.edit_buffer = value.clone();
-                        EditField::OptionValue(*idx)
+                    // Check if this option takes a value
+                    let curl_options = crate::command::options::CurlOptions::new();
+                    if let Some(option_def) = curl_options.get_option(&option.flag) {
+                        // Only allow editing if the option takes a value
+                        if option_def.takes_value {
+                            if let Some(value) = &option.value {
+                                self.ui_state.edit_buffer = value.clone();
+                                EditField::OptionValue(*idx)
+                            } else {
+                                return false;
+                            }
+                        } else {
+                            // Option doesn't take a value, don't allow editing
+                            return false;
+                        }
                     } else {
+                        // Unknown option, don't allow editing
                         return false;
                     }
                 } else {
@@ -1261,6 +1290,26 @@ impl App {
                 
                 // Update the selected field to point to the newly added option
                 self.ui_state.selected_field = SelectedField::Options(self.current_command.options.len() - 1);
+            }
+        }
+    }
+    
+    /// Remove an option from the current command
+    fn remove_option(&mut self, idx: usize) {
+        // Check if the index is valid
+        if idx < self.current_command.options.len() {
+            // Remove the option
+            self.current_command.options.remove(idx);
+            
+            // Update the selected field if needed
+            if !self.current_command.options.is_empty() {
+                // If there are still options, select the previous one or the last one
+                let new_idx = if idx > 0 {
+                    idx - 1
+                } else {
+                    0
+                };
+                self.ui_state.selected_field = SelectedField::Options(new_idx);
             }
         }
     }
