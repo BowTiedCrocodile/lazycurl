@@ -13,14 +13,20 @@ pub fn render(
     const width = win.width;
     const height = win.height;
 
-    const status_h: u16 = 4;
+    const status_h: u16 = 5;
     const command_display_h: u16 = 4;
-    const remaining = if (height > status_h) height - status_h else 0;
-    const output_h: u16 = if (remaining > command_display_h) remaining / 3 else 0;
-    const main_h: u16 = if (remaining > command_display_h + output_h) remaining - command_display_h - output_h else 0;
+    const remaining = if (height > status_h + command_display_h) height - status_h - command_display_h else 0;
+    const proposed_main: u16 = if (remaining > 0) @max(@as(u16, 5), (remaining * 3) / 10) else 0;
+    const main_h: u16 = if (remaining > 0) @min(remaining, proposed_main) else 0;
+    const output_h: u16 = if (remaining > main_h) remaining - main_h else 0;
 
-    const templates_w: u16 = @max(20, width / 4);
-    const builder_w: u16 = if (width > templates_w) width - templates_w else width;
+    const templates_w: u16 = @min(width, @max(@as(u16, 20), width / 5));
+    var method_w: u16 = 15;
+    if (width <= templates_w + method_w + 8) {
+        const available = if (width > templates_w) width - templates_w else 0;
+        method_w = @min(method_w, available);
+    }
+    const url_w: u16 = if (width > templates_w + method_w) width - templates_w - method_w else 0;
 
     const status_win = win.child(.{
         .x_off = 0,
@@ -40,14 +46,26 @@ pub fn render(
     });
     components.templates_panel.render(templates_win, app, theme);
 
-    const builder_win = win.child(.{
-        .x_off = templates_w,
-        .y_off = status_h,
-        .width = builder_w,
-        .height = main_h,
-        .border = .{ .where = .all, .style = theme.border },
-    });
-    components.command_builder.render(builder_win, app, theme);
+    if (method_w > 0) {
+        const method_win = win.child(.{
+            .x_off = templates_w,
+            .y_off = status_h,
+            .width = method_w,
+            .height = main_h,
+            .border = .{ .where = .all, .style = theme.border },
+        });
+        components.command_builder.render(method_win, app, theme);
+    }
+
+    if (url_w > 0) {
+        const url_win = win.child(.{
+            .x_off = templates_w + method_w,
+            .y_off = status_h,
+            .width = url_w,
+            .height = main_h,
+        });
+        components.url_container.render(url_win, app, theme);
+    }
 
     const command_preview = try app.executeCommand();
     defer app.allocator.free(command_preview);

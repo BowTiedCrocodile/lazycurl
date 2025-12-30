@@ -1,13 +1,299 @@
+const std = @import("std");
 const vaxis = @import("vaxis");
 const app_mod = @import("zvrl_app");
 const theme_mod = @import("../theme.zig");
+const options_panel = @import("options_panel.zig");
 
 pub fn render(win: vaxis.Window, app: *app_mod.App, theme: theme_mod.Theme) void {
-    drawLine(win, 0, "URL", theme.title);
-    drawLine(win, 1, app.current_command.url, theme.text);
+    const width = win.width;
+    const height = win.height;
+
+    if (height == 0 or width == 0) return;
+
+    const url_h: u16 = @min(@as(u16, 3), height);
+    const tabs_h: u16 = if (height > url_h) @min(@as(u16, 2), height - url_h) else 0;
+    const content_h: u16 = if (height > url_h + tabs_h) height - url_h - tabs_h else 0;
+
+    if (url_h > 0) {
+        const url_win = win.child(.{
+            .x_off = 0,
+            .y_off = 0,
+            .width = width,
+            .height = url_h,
+            .border = .{ .where = .all, .style = theme.border },
+        });
+        renderUrlInput(url_win, app, theme);
+    }
+
+    if (tabs_h > 0) {
+        const tabs_win = win.child(.{
+            .x_off = 0,
+            .y_off = url_h,
+            .width = width,
+            .height = tabs_h,
+            .border = .{ .where = .all, .style = theme.border },
+        });
+        renderTabs(tabs_win, app, theme);
+    }
+
+    if (content_h > 0) {
+        const content_win = win.child(.{
+            .x_off = 0,
+            .y_off = url_h + tabs_h,
+            .width = width,
+            .height = content_h,
+            .border = .{ .where = .all, .style = theme.border },
+        });
+        renderTabContent(content_win, app, theme);
+    }
+}
+
+fn renderUrlInput(win: vaxis.Window, app: *app_mod.App, theme: theme_mod.Theme) void {
+    var title_style = theme.title;
+    if (app.state == .editing and app.editing_field != null and app.editing_field.? == .url) {
+        title_style = theme.accent;
+    }
+    drawLine(win, 0, "URL", title_style);
+
+    const is_selected = isUrlSelected(app);
+    var url_style = if (is_selected) theme.accent else theme.text;
+    if (app.state == .editing and app.editing_field != null and app.editing_field.? == .url) {
+        url_style = theme.accent;
+        url_style.reverse = true;
+    }
+    drawUrlValue(win, 1, app.current_command.url, url_style, theme.accent);
+}
+
+fn renderTabs(win: vaxis.Window, app: *app_mod.App, theme: theme_mod.Theme) void {
+    const tabs = [_]struct {
+        label: []const u8,
+        tab: app_mod.Tab,
+    }{
+        .{ .label = "[URL]", .tab = .url },
+        .{ .label = "[Headers]", .tab = .headers },
+        .{ .label = "[Body]", .tab = .body },
+        .{ .label = "[Options]", .tab = .options },
+    };
+
+    var segments: [12]vaxis.Segment = undefined;
+    var idx: usize = 0;
+    for (tabs) |tab| {
+        var style = if (app.ui.active_tab == tab.tab) theme.accent else theme.text;
+        if (app.ui.active_tab == tab.tab) style.reverse = true;
+        segments[idx] = .{ .text = tab.label, .style = style };
+        idx += 1;
+        segments[idx] = .{ .text = " ", .style = theme.muted };
+        idx += 1;
+    }
+    _ = win.print(segments[0..idx], .{ .row_offset = 0, .wrap = .none });
+}
+
+fn renderTabContent(win: vaxis.Window, app: *app_mod.App, theme: theme_mod.Theme) void {
+    switch (app.ui.active_tab) {
+        .url => renderQueryParams(win, app, theme),
+        .headers => renderHeaders(win, app, theme),
+        .body => renderBody(win, app, theme),
+        .options => options_panel.render(win, app, theme),
+    }
+}
+
+fn renderQueryParams(win: vaxis.Window, app: *app_mod.App, theme: theme_mod.Theme) void {
+    drawLine(win, 0, "Query Params", theme.title);
+    if (app.current_command.query_params.items.len == 0) {
+        drawLine(win, 1, "No query params", theme.muted);
+        return;
+    }
+
+    var row: u16 = 1;
+    for (app.current_command.query_params.items, 0..) |param, idx| {
+        if (row >= win.height) break;
+        const enabled = if (param.enabled) "[x]" else "[ ]";
+        const is_selected = isQueryParamSelected(app, idx);
+        var style = if (is_selected) theme.accent else theme.text;
+        if (is_selected) style.reverse = true;
+        var buffer: [160]u8 = undefined;
+        const line = std.fmt.bufPrint(&buffer, "{s} {s}={s}", .{ enabled, param.key, param.value }) catch return;
+        drawLine(win, row, line, style);
+        row += 1;
+    }
+}
+
+fn renderHeaders(win: vaxis.Window, app: *app_mod.App, theme: theme_mod.Theme) void {
+    drawLine(win, 0, "Headers", theme.title);
+    if (app.current_command.headers.items.len == 0) {
+        drawLine(win, 1, "No headers", theme.muted);
+        return;
+    }
+
+    var row: u16 = 1;
+    for (app.current_command.headers.items, 0..) |header, idx| {
+        if (row >= win.height) break;
+        const enabled = if (header.enabled) "[x]" else "[ ]";
+        const is_selected = isHeaderSelected(app, idx);
+        var style = if (is_selected) theme.accent else theme.text;
+        if (is_selected) style.reverse = true;
+        var buffer: [160]u8 = undefined;
+        const line = std.fmt.bufPrint(&buffer, "{s} {s}: {s}", .{ enabled, header.key, header.value }) catch return;
+        drawLine(win, row, line, style);
+        row += 1;
+    }
+}
+
+fn renderBody(win: vaxis.Window, app: *app_mod.App, theme: theme_mod.Theme) void {
+    drawLine(win, 0, "Body", theme.title);
+
+    const selected_type = isBodyTypeSelected(app);
+    var type_style = if (selected_type) theme.accent else theme.text;
+    if (selected_type) type_style.reverse = true;
+
+    const body_type = bodyTypeLabel(app);
+    var buffer: [64]u8 = undefined;
+    const type_line = std.fmt.bufPrint(&buffer, "Type: {s}", .{body_type}) catch return;
+    drawLine(win, 1, type_line, type_style);
+
+    const content_selected = isBodyContentSelected(app);
+    var content_style = if (content_selected) theme.accent else theme.text;
+    if (content_selected) content_style.reverse = true;
+
+    switch (app.current_command.body orelse .none) {
+        .none => drawLine(win, 3, "No body", theme.muted),
+        .raw => |payload| renderBodyLines(win, 3, payload, content_style, theme.muted),
+        .form_data => |list| {
+            var row: u16 = 3;
+            for (list.items) |item| {
+                if (row >= win.height) break;
+                const enabled = if (item.enabled) "[x]" else "[ ]";
+                const line = std.fmt.bufPrint(&buffer, "{s} {s}={s}", .{ enabled, item.key, item.value }) catch return;
+                drawLine(win, row, line, content_style);
+                row += 1;
+            }
+        },
+        .binary => |payload| {
+            const line = std.fmt.bufPrint(&buffer, "Binary data: {d} bytes", .{payload.len}) catch return;
+            drawLine(win, 3, line, content_style);
+        },
+    }
+}
+
+fn renderBodyLines(
+    win: vaxis.Window,
+    start_row: u16,
+    payload: []const u8,
+    style: vaxis.Style,
+    empty_style: vaxis.Style,
+) void {
+    if (payload.len == 0) {
+        drawLine(win, start_row, "Empty body", empty_style);
+        return;
+    }
+
+    var row = start_row;
+    var it = std.mem.splitScalar(u8, payload, '\n');
+    while (it.next()) |line| {
+        if (row >= win.height) break;
+        drawLine(win, row, line, style);
+        row += 1;
+    }
+}
+
+fn drawUrlValue(
+    win: vaxis.Window,
+    row: u16,
+    url: []const u8,
+    base_style: vaxis.Style,
+    var_style: vaxis.Style,
+) void {
+    if (row >= win.height) return;
+    var segments: [32]vaxis.Segment = undefined;
+    var count: usize = 0;
+    var remaining = url;
+
+    while (remaining.len > 0 and count + 1 < segments.len) {
+        const start = std.mem.indexOf(u8, remaining, "{{");
+        if (start == null) {
+            segments[count] = .{ .text = remaining, .style = base_style };
+            count += 1;
+            break;
+        }
+        const start_idx = start.?;
+        if (start_idx > 0) {
+            segments[count] = .{ .text = remaining[0..start_idx], .style = base_style };
+            count += 1;
+        }
+        const after_start = remaining[start_idx + 2 ..];
+        const end = std.mem.indexOf(u8, after_start, "}}");
+        if (end == null or count + 1 >= segments.len) {
+            segments[count] = .{ .text = remaining[start_idx..], .style = base_style };
+            count += 1;
+            break;
+        }
+        const end_idx = end.?;
+        segments[count] = .{ .text = remaining[start_idx .. start_idx + 2 + end_idx + 2], .style = var_style };
+        count += 1;
+        remaining = after_start[end_idx + 2 ..];
+    }
+
+    if (count == 0) return;
+    _ = win.print(segments[0..count], .{ .row_offset = row, .wrap = .none });
 }
 
 fn drawLine(win: vaxis.Window, row: u16, text: []const u8, style: vaxis.Style) void {
+    if (row >= win.height) return;
     const segments = [_]vaxis.Segment{.{ .text = text, .style = style }};
     _ = win.print(&segments, .{ .row_offset = row, .wrap = .none });
+}
+
+fn isUrlSelected(app: *app_mod.App) bool {
+    if (app.ui.selected_template != null) return false;
+    return switch (app.ui.selected_field) {
+        .url => |field| field == .url,
+        else => false,
+    };
+}
+
+fn isQueryParamSelected(app: *app_mod.App, idx: usize) bool {
+    if (app.ui.selected_template != null) return false;
+    return switch (app.ui.selected_field) {
+        .url => |field| switch (field) {
+            .query_param => |sel| sel == idx,
+            else => false,
+        },
+        else => false,
+    };
+}
+
+fn isHeaderSelected(app: *app_mod.App, idx: usize) bool {
+    if (app.ui.selected_template != null) return false;
+    return switch (app.ui.selected_field) {
+        .headers => |sel| sel == idx,
+        else => false,
+    };
+}
+
+fn isBodyTypeSelected(app: *app_mod.App) bool {
+    if (app.ui.selected_template != null) return false;
+    return switch (app.ui.selected_field) {
+        .body => |field| field == .type,
+        else => false,
+    };
+}
+
+fn isBodyContentSelected(app: *app_mod.App) bool {
+    if (app.ui.selected_template != null) return false;
+    return switch (app.ui.selected_field) {
+        .body => |field| field == .content,
+        else => false,
+    };
+}
+
+fn bodyTypeLabel(app: *app_mod.App) []const u8 {
+    if (app.current_command.body) |body| {
+        return switch (body) {
+            .none => "none",
+            .raw => "raw",
+            .form_data => "form",
+            .binary => "binary",
+        };
+    }
+    return "none";
 }

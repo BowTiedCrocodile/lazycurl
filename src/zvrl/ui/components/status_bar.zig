@@ -11,6 +11,12 @@ pub fn render(win: vaxis.Window, app: *app_mod.App, theme: theme_mod.Theme) void
     drawLine(win, 0, title, theme.title);
     drawKeyValue(win, 1, "State", state, theme);
     drawKeyValue(win, 2, "Tab", tab, theme);
+
+    const env_name = currentEnvironmentName(app);
+    drawKeyValue(win, 3, "Env", env_name, theme);
+
+    const shortcuts = "Ctrl+Q Quit | Ctrl+R/F5 Run";
+    drawLine(win, 4, shortcuts, theme.muted);
 }
 
 fn drawLine(win: vaxis.Window, row: u16, text: []const u8, style: vaxis.Style) void {
@@ -41,4 +47,13 @@ fn tabLabel(tab: app_mod.Tab) []const u8 {
         .body => "body",
         .options => "options",
     };
+}
+
+fn currentEnvironmentName(app: *app_mod.App) []const u8 {
+    if (app.environments.items.len == 0) return "none";
+    const index = if (app.current_environment_index < app.environments.items.len)
+        app.current_environment_index
+    else
+        0;
+    return app.environments.items[index].name;
 }

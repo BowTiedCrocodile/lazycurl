@@ -12,11 +12,22 @@ pub fn render(win: vaxis.Window, app: *app_mod.App, theme: theme_mod.Theme) void
     const info = std.fmt.bufPrint(&buffer, "Count: {d}", .{count}) catch return;
     drawLine(win, 1, info, theme.muted);
 
-    if (selected) |idx| {
-        const sel = std.fmt.bufPrint(&buffer, "Selected: {d}", .{idx + 1}) catch return;
-        drawLine(win, 2, sel, theme.accent);
-    } else {
-        drawLine(win, 2, "Selected: none", theme.muted);
+    if (count == 0) {
+        drawLine(win, 2, "No templates", theme.muted);
+        return;
+    }
+
+    var row: u16 = 2;
+    for (app.templates.items, 0..) |template, idx| {
+        if (row >= win.height) break;
+        var style = theme.text;
+        if (selected != null and selected.? == idx) {
+            style = theme.accent;
+            style.reverse = true;
+        }
+        const line = std.fmt.bufPrint(&buffer, "{d}. {s}", .{ idx + 1, template.name }) catch return;
+        drawLine(win, row, line, style);
+        row += 1;
     }
 }
 
