@@ -70,6 +70,7 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
             .imports = &.{
                 .{ .name = "zvrl_app", .module = app_mod },
+                .{ .name = "vaxis", .module = vaxis_mod },
             },
         }),
     });
