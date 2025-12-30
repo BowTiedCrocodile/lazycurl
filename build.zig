@@ -16,10 +16,28 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
+    const command_mod = b.addModule("zvrl_command", .{
+        .root_source_file = b.path("src/zvrl/command/mod.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "zvrl_core", .module = core_mod },
+        },
+    });
+
     const execution_mod = b.addModule("zvrl_execution", .{
         .root_source_file = b.path("src/zvrl/execution/mod.zig"),
         .target = target,
         .optimize = optimize,
+    });
+
+    const persistence_mod = b.addModule("zvrl_persistence", .{
+        .root_source_file = b.path("src/zvrl/persistence/mod.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "zvrl_core", .module = core_mod },
+        },
     });
 
     const app_mod = b.addModule("zvrl_app", .{
@@ -28,7 +46,9 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .imports = &.{
             .{ .name = "zvrl_core", .module = core_mod },
+            .{ .name = "zvrl_command", .module = command_mod },
             .{ .name = "zvrl_execution", .module = execution_mod },
+            .{ .name = "zvrl_persistence", .module = persistence_mod },
             .{ .name = "vaxis", .module = vaxis_mod },
         },
     });
@@ -86,7 +106,9 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
             .imports = &.{
                 .{ .name = "zvrl_core", .module = core_mod },
+                .{ .name = "zvrl_command", .module = command_mod },
                 .{ .name = "zvrl_execution", .module = execution_mod },
+                .{ .name = "zvrl_persistence", .module = persistence_mod },
                 .{ .name = "vaxis", .module = vaxis_mod },
             },
         }),
