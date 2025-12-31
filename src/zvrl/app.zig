@@ -313,8 +313,10 @@ pub const App = struct {
                             }
                             self.clearLeftPanelFocus();
                         },
-                        .history => {
+                        .history => if (self.ui.selected_history) |idx| {
+                            try self.loadHistoryCommand(idx);
                             self.clearLeftPanelFocus();
+                            self.ui.selected_field = .{ .url = .url };
                         },
                     }
                 } else {
@@ -837,6 +839,13 @@ pub const App = struct {
     fn loadTemplate(self: *App, idx: usize) !void {
         if (idx >= self.templates.items.len) return;
         const cloned = try cloneCommand(self.allocator, &self.id_generator, &self.templates.items[idx].command);
+        self.current_command.deinit();
+        self.current_command = cloned;
+    }
+
+    fn loadHistoryCommand(self: *App, idx: usize) !void {
+        if (idx >= self.history.items.len) return;
+        const cloned = try cloneCommand(self.allocator, &self.id_generator, &self.history.items[idx]);
         self.current_command.deinit();
         self.current_command = cloned;
     }

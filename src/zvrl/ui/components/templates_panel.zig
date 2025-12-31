@@ -13,19 +13,25 @@ pub fn render(
     const templates_focus = app.ui.left_panel != null and app.ui.left_panel.? == .templates;
     row = renderSectionHeader(allocator, win, row, "Templates", app.ui.templates_expanded, templates_focus, app.templates.items.len, theme);
     if (app.ui.templates_expanded) {
-        row = renderTemplateList(allocator, win, row, app, theme);
+        const available = availableRows(win, row, 2);
+        ensureScroll(&app.ui.templates_scroll, app.ui.selected_template, app.templates.items.len, available);
+        row = renderTemplateList(allocator, win, row, app, theme, available);
     }
 
     const env_focus = app.ui.left_panel != null and app.ui.left_panel.? == .environments;
     row = renderSectionHeader(allocator, win, row, "Environments", app.ui.environments_expanded, env_focus, app.environments.items.len, theme);
     if (app.ui.environments_expanded) {
-        row = renderEnvironmentList(allocator, win, row, app, theme);
+        const available = availableRows(win, row, 1);
+        ensureScroll(&app.ui.environments_scroll, app.ui.selected_environment, app.environments.items.len, available);
+        row = renderEnvironmentList(allocator, win, row, app, theme, available);
     }
 
     const history_focus = app.ui.left_panel != null and app.ui.left_panel.? == .history;
     row = renderSectionHeader(allocator, win, row, "History", app.ui.history_expanded, history_focus, app.history.items.len, theme);
     if (app.ui.history_expanded) {
-        _ = renderHistoryList(allocator, win, row, app, theme);
+        const available = availableRows(win, row, 0);
+        ensureScroll(&app.ui.history_scroll, app.ui.selected_history, app.history.items.len, available);
+        _ = renderHistoryList(allocator, win, row, app, theme, available);
     }
 }
 
@@ -62,6 +68,7 @@ fn renderTemplateList(
     start_row: u16,
     app: *app_mod.App,
     theme: theme_mod.Theme,
+    max_rows: usize,
 ) u16 {
     if (start_row >= win.height) return start_row;
     if (app.templates.items.len == 0) {
@@ -72,7 +79,8 @@ fn renderTemplateList(
     var row = start_row;
     const focus = app.ui.left_panel != null and app.ui.left_panel.? == .templates;
     var idx: usize = app.ui.templates_scroll;
-    while (idx < app.templates.items.len and row < win.height) : (idx += 1) {
+    var rendered: usize = 0;
+    while (idx < app.templates.items.len and row < win.height and rendered < max_rows) : (idx += 1) {
         const template = app.templates.items[idx];
         const selected = app.ui.selected_template != null and app.ui.selected_template.? == idx;
         var style = if (selected and focus) theme.accent else theme.text;
@@ -81,6 +89,7 @@ fn renderTemplateList(
         const line = std.fmt.allocPrint(allocator, " {s} {s}", .{ prefix, template.name }) catch return row;
         drawLine(win, row, line, style);
         row += 1;
+        rendered += 1;
     }
     return row;
 }
@@ -91,6 +100,7 @@ fn renderEnvironmentList(
     start_row: u16,
     app: *app_mod.App,
     theme: theme_mod.Theme,
+    max_rows: usize,
 ) u16 {
     if (start_row >= win.height) return start_row;
     if (app.environments.items.len == 0) {
@@ -101,7 +111,8 @@ fn renderEnvironmentList(
     var row = start_row;
     const focus = app.ui.left_panel != null and app.ui.left_panel.? == .environments;
     var idx: usize = app.ui.environments_scroll;
-    while (idx < app.environments.items.len and row < win.height) : (idx += 1) {
+    var rendered: usize = 0;
+    while (idx < app.environments.items.len and row < win.height and rendered < max_rows) : (idx += 1) {
         const env = app.environments.items[idx];
         const selected = app.ui.selected_environment != null and app.ui.selected_environment.? == idx;
         var style = if (selected and focus) theme.accent else theme.text;
@@ -111,6 +122,7 @@ fn renderEnvironmentList(
         const line = std.fmt.allocPrint(allocator, " {s}{s} {s}", .{ marker, prefix, env.name }) catch return row;
         drawLine(win, row, line, style);
         row += 1;
+        rendered += 1;
     }
     return row;
 }
@@ -121,6 +133,7 @@ fn renderHistoryList(
     start_row: u16,
     app: *app_mod.App,
     theme: theme_mod.Theme,
+    max_rows: usize,
 ) u16 {
     if (start_row >= win.height) return start_row;
     if (app.history.items.len == 0) {
@@ -131,7 +144,8 @@ fn renderHistoryList(
     var row = start_row;
     const focus = app.ui.left_panel != null and app.ui.left_panel.? == .history;
     var idx: usize = app.ui.history_scroll;
-    while (idx < app.history.items.len and row < win.height) : (idx += 1) {
+    var rendered: usize = 0;
+    while (idx < app.history.items.len and row < win.height and rendered < max_rows) : (idx += 1) {
         const command = app.history.items[idx];
         const selected = app.ui.selected_history != null and app.ui.selected_history.? == idx;
         var style = if (selected and focus) theme.accent else theme.text;
@@ -140,6 +154,26 @@ fn renderHistoryList(
         const line = std.fmt.allocPrint(allocator, " {s} {s}", .{ prefix, command.name }) catch return row;
         drawLine(win, row, line, style);
         row += 1;
+        rendered += 1;
     }
     return row;
+}
+
+fn availableRows(win: vaxis.Window, row: u16, remaining_headers: u16) usize {
+    if (row >= win.height) return 0;
+    const available = win.height - row;
+    if (available <= remaining_headers) return 0;
+    return @intCast(available - remaining_headers);
+}
+
+fn ensureScroll(scroll: *usize, selection: ?usize, total: usize, view: usize) void {
+    if (total == 0 or view == 0) {
+        scroll.* = 0;
+        return;
+    }
+    const idx = selection orelse return;
+    if (idx < scroll.*) scroll.* = idx;
+    if (idx >= scroll.* + view) scroll.* = idx - view + 1;
+    const max_scroll = if (total > view) total - view else 0;
+    if (scroll.* > max_scroll) scroll.* = max_scroll;
 }
