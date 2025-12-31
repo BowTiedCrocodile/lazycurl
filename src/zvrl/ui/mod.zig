@@ -54,22 +54,28 @@ pub fn render(
     });
     components.status_bar.render(allocator, status_win, app, theme);
 
+    const templates_border = if (app.ui.selected_template != null) theme.accent else theme.border;
     const templates_win = win.child(.{
         .x_off = 0,
         .y_off = status_h,
         .width = templates_w,
         .height = main_h,
-        .border = .{ .where = .all, .style = theme.border },
+        .border = .{ .where = .all, .style = templates_border },
     });
     components.templates_panel.render(allocator, templates_win, app, theme);
 
     if (method_w > 0) {
+        const method_selected = app.ui.selected_template == null and switch (app.ui.selected_field) {
+            .url => |field| field == .method,
+            else => false,
+        };
+        const method_border = if (method_selected or app.state == .method_dropdown) theme.accent else theme.border;
         const method_win = win.child(.{
             .x_off = templates_w,
             .y_off = status_h,
             .width = method_w,
             .height = main_h,
-            .border = .{ .where = .all, .style = theme.border },
+            .border = .{ .where = .all, .style = method_border },
         });
         components.command_builder.render(allocator, method_win, app, theme);
     }

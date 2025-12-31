@@ -27,12 +27,13 @@ pub fn render(
     const content_h: u16 = if (height > url_h + tabs_h) height - url_h - tabs_h else 0;
 
     if (url_h > 0) {
+        const url_border = if (isUrlSelected(app) or isEditingUrl(app)) theme.accent else theme.border;
         const url_win = win.child(.{
             .x_off = 0,
             .y_off = 0,
             .width = width,
             .height = url_h,
-            .border = .{ .where = .all, .style = theme.border },
+            .border = .{ .where = .all, .style = url_border },
         });
         renderUrlInput(url_win, app, theme);
     }
@@ -49,12 +50,13 @@ pub fn render(
     }
 
     if (content_h > 0) {
+        const content_border = if (isContentSelected(app)) theme.accent else theme.border;
         const content_win = win.child(.{
             .x_off = 0,
             .y_off = url_h + tabs_h,
             .width = width,
             .height = content_h,
-            .border = .{ .where = .all, .style = theme.border },
+            .border = .{ .where = .all, .style = content_border },
         });
         renderTabContent(allocator, content_win, app, theme);
     }
@@ -62,7 +64,7 @@ pub fn render(
 
 fn renderUrlInput(win: vaxis.Window, app: *app_mod.App, theme: theme_mod.Theme) void {
     var title_style = theme.title;
-    const is_editing = app.state == .editing and app.editing_field != null and app.editing_field.? == .url;
+    const is_editing = isEditingUrl(app);
     if (is_editing) {
         title_style = theme.accent;
     }
@@ -416,6 +418,10 @@ fn isUrlSelected(app: *app_mod.App) bool {
     };
 }
 
+fn isEditingUrl(app: *app_mod.App) bool {
+    return app.state == .editing and app.editing_field != null and app.editing_field.? == .url;
+}
+
 fn isQueryParamSelected(app: *app_mod.App, idx: usize) bool {
     if (app.ui.selected_template != null) return false;
     return switch (app.ui.selected_field) {
@@ -448,6 +454,19 @@ fn isBodyContentSelected(app: *app_mod.App) bool {
     return switch (app.ui.selected_field) {
         .body => |field| field == .content,
         else => false,
+    };
+}
+
+fn isContentSelected(app: *app_mod.App) bool {
+    if (app.ui.selected_template != null) return false;
+    return switch (app.ui.selected_field) {
+        .url => |field| switch (field) {
+            .query_param => true,
+            else => false,
+        },
+        .headers => true,
+        .body => true,
+        .options => true,
     };
 }
 
