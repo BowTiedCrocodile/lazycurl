@@ -16,32 +16,42 @@ pub fn render(
 
     const status_h: u16 = 5;
     const command_display_h: u16 = 4;
-    const remaining = if (height > status_h + command_display_h) height - status_h - command_display_h else 0;
+    const total_remaining: u16 = if (height > status_h) height - status_h else 0;
+    const remaining = if (total_remaining > command_display_h) total_remaining - command_display_h else 0;
     const proposed_main: u16 = if (remaining > 0) @max(@as(u16, 5), (remaining * 3) / 10) else 0;
     const main_h: u16 = if (remaining > 0) @min(remaining, proposed_main) else 0;
     const output_h: u16 = if (remaining > main_h) remaining - main_h else 0;
 
     const min_url_w: u16 = 20;
-    var templates_w: u16 = @min(width, @max(@as(u16, 20), width / 5));
+    const min_history_w: u16 = 20;
+    var left_w: u16 = @min(width, @max(@as(u16, 22), width / 4));
     var method_w: u16 = 15;
+    var history_w: u16 = @max(min_history_w, width / 5);
 
-    if (width < templates_w + method_w + min_url_w) {
-        const needed = templates_w + method_w + min_url_w - width;
-        if (templates_w > 12) {
-            const shrink = @min(needed, templates_w - 12);
-            templates_w -= shrink;
+    if (width < left_w + method_w + min_url_w + history_w) {
+        const needed = left_w + method_w + min_url_w + history_w - width;
+        if (left_w > 16) {
+            const shrink = @min(needed, left_w - 16);
+            left_w -= shrink;
         }
     }
-    if (width < templates_w + method_w + min_url_w) {
-        const needed = templates_w + method_w + min_url_w - width;
+    if (width < left_w + method_w + min_url_w + history_w) {
+        const needed = left_w + method_w + min_url_w + history_w - width;
         if (method_w > 10) {
             const shrink = @min(needed, method_w - 10);
             method_w -= shrink;
         }
     }
+    if (width < left_w + method_w + min_url_w + history_w) {
+        const needed = left_w + method_w + min_url_w + history_w - width;
+        if (history_w > min_history_w) {
+            const shrink = @min(needed, history_w - min_history_w);
+            history_w -= shrink;
+        }
+    }
 
-    const url_w: u16 = if (width > templates_w + method_w)
-        width - templates_w - method_w
+    const url_w: u16 = if (width > left_w + method_w + history_w)
+        width - left_w - method_w - history_w
     else
         0;
 
@@ -54,12 +64,23 @@ pub fn render(
     });
     components.status_bar.render(allocator, status_win, app, theme);
 
+    const env_border = if (app.ui.left_panel != null and app.ui.left_panel.? == .environments) theme.accent else theme.border;
+    const env_h: u16 = if (total_remaining > 6) 6 else total_remaining;
+    const env_win = win.child(.{
+        .x_off = 0,
+        .y_off = status_h,
+        .width = left_w,
+        .height = env_h,
+        .border = .{ .where = .all, .style = env_border },
+    });
+    components.environment_panel.render(allocator, env_win, app, theme);
+
     const templates_border = if (app.ui.left_panel != null and app.ui.left_panel.? == .templates) theme.accent else theme.border;
     const templates_win = win.child(.{
         .x_off = 0,
-        .y_off = status_h,
-        .width = templates_w,
-        .height = main_h,
+        .y_off = status_h + env_h,
+        .width = left_w,
+        .height = if (total_remaining > env_h) total_remaining - env_h else 0,
         .border = .{ .where = .all, .style = templates_border },
     });
     components.templates_panel.render(allocator, templates_win, app, theme);
@@ -71,7 +92,7 @@ pub fn render(
         };
         const method_border = if (method_selected or app.state == .method_dropdown) theme.accent else theme.border;
         const method_win = win.child(.{
-            .x_off = templates_w,
+            .x_off = left_w,
             .y_off = status_h,
             .width = method_w,
             .height = main_h,
@@ -82,7 +103,7 @@ pub fn render(
 
     if (url_w > 0) {
         const url_win = win.child(.{
-            .x_off = templates_w + method_w,
+            .x_off = left_w + method_w,
             .y_off = status_h,
             .width = url_w,
             .height = main_h,
@@ -90,21 +111,33 @@ pub fn render(
         components.url_container.render(allocator, url_win, app, theme);
     }
 
+    if (history_w > 0) {
+        const history_border = if (app.ui.left_panel != null and app.ui.left_panel.? == .history) theme.accent else theme.border;
+        const history_win = win.child(.{
+            .x_off = left_w + method_w + url_w,
+            .y_off = status_h,
+            .width = history_w,
+            .height = main_h,
+            .border = .{ .where = .all, .style = history_border },
+        });
+        components.history_panel.render(allocator, history_win, app, theme);
+    }
+
     const command_preview = try app.buildCommandPreview(allocator);
 
     const command_win = win.child(.{
-        .x_off = 0,
+        .x_off = left_w,
         .y_off = status_h + main_h,
-        .width = width,
+        .width = width - left_w,
         .height = command_display_h,
         .border = .{ .where = .all, .style = theme.border },
     });
     components.command_display.render(command_win, command_preview, theme);
 
     const output_win = win.child(.{
-        .x_off = 0,
+        .x_off = left_w,
         .y_off = status_h + main_h + command_display_h,
-        .width = width,
+        .width = width - left_w,
         .height = output_h,
         .border = .{ .where = .all, .style = theme.border },
     });

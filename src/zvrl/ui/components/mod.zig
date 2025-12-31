@@ -1,5 +1,7 @@
 pub const status_bar = @import("status_bar.zig");
 pub const templates_panel = @import("templates_panel.zig");
+pub const environment_panel = @import("environment_panel.zig");
+pub const history_panel = @import("history_panel.zig");
 pub const command_builder = @import("command_builder.zig");
 pub const command_display = @import("command_display.zig");
 pub const output_panel = @import("output_panel.zig");

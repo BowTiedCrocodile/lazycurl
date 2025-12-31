@@ -9,57 +9,37 @@ pub fn render(
     app: *app_mod.App,
     theme: theme_mod.Theme,
 ) void {
-    var row: u16 = 0;
-    const templates_focus = app.ui.left_panel != null and app.ui.left_panel.? == .templates;
-    row = renderSectionHeader(allocator, win, row, "Templates", app.ui.templates_expanded, templates_focus, app.templates.items.len, theme);
-    if (app.ui.templates_expanded) {
-        const available = availableRows(win, row, 2);
-        ensureScroll(&app.ui.templates_scroll, app.ui.selected_template, app.templates.items.len, available);
-        row = renderTemplateList(allocator, win, row, app, theme, available);
-    }
+    if (win.height == 0) return;
+    const focused = app.ui.left_panel != null and app.ui.left_panel.? == .templates;
+    var header_style = if (focused) theme.accent else theme.title;
+    if (focused) header_style.reverse = true;
+    const title = std.fmt.allocPrint(allocator, "Templates ({d})", .{app.templates.items.len}) catch return;
+    drawLine(win, 0, title, header_style);
 
-    const env_focus = app.ui.left_panel != null and app.ui.left_panel.? == .environments;
-    row = renderSectionHeader(allocator, win, row, "Environments", app.ui.environments_expanded, env_focus, app.environments.items.len, theme);
-    if (app.ui.environments_expanded) {
-        const available = availableRows(win, row, 1);
-        ensureScroll(&app.ui.environments_scroll, app.ui.selected_environment, app.environments.items.len, available);
-        row = renderEnvironmentList(allocator, win, row, app, theme, available);
-    }
+    if (!app.ui.templates_expanded) return;
 
-    const history_focus = app.ui.left_panel != null and app.ui.left_panel.? == .history;
-    row = renderSectionHeader(allocator, win, row, "History", app.ui.history_expanded, history_focus, app.history.items.len, theme);
-    if (app.ui.history_expanded) {
-        const available = availableRows(win, row, 0);
-        ensureScroll(&app.ui.history_scroll, app.ui.selected_history, app.history.items.len, available);
-        _ = renderHistoryList(allocator, win, row, app, theme, available);
-    }
+    const available = if (win.height > 1) win.height - 1 else 0;
+    ensureScroll(&app.ui.templates_scroll, app.ui.selected_template, app.templates.items.len, available);
+    _ = renderTemplateList(allocator, win, 1, app, theme, available);
 }
+
+fn ensureScroll(scroll: *usize, selection: ?usize, total: usize, view: usize) void {
+    if (total == 0 or view == 0) {
+        scroll.* = 0;
+        return;
+    }
+    const idx = selection orelse return;
+    if (idx < scroll.*) scroll.* = idx;
+    if (idx >= scroll.* + view) scroll.* = idx - view + 1;
+    const max_scroll = if (total > view) total - view else 0;
+    if (scroll.* > max_scroll) scroll.* = max_scroll;
+}
+
 
 fn drawLine(win: vaxis.Window, row: u16, text: []const u8, style: vaxis.Style) void {
+    if (row >= win.height) return;
     const segments = [_]vaxis.Segment{.{ .text = text, .style = style }};
     _ = win.print(&segments, .{ .row_offset = row, .wrap = .none });
-}
-
-fn renderSectionHeader(
-    allocator: std.mem.Allocator,
-    win: vaxis.Window,
-    row: u16,
-    title: []const u8,
-    expanded: bool,
-    focused: bool,
-    count: usize,
-    theme: theme_mod.Theme,
-) u16 {
-    if (row >= win.height) return row;
-    const indicator = if (expanded) "v" else ">";
-    const line = std.fmt.allocPrint(allocator, "{s} {s} ({d})", .{ indicator, title, count }) catch return row;
-    var style = theme.title;
-    if (focused) {
-        style = theme.accent;
-        style.reverse = true;
-    }
-    drawLine(win, row, line, style);
-    return row + 1;
 }
 
 fn renderTemplateList(
@@ -92,88 +72,4 @@ fn renderTemplateList(
         rendered += 1;
     }
     return row;
-}
-
-fn renderEnvironmentList(
-    allocator: std.mem.Allocator,
-    win: vaxis.Window,
-    start_row: u16,
-    app: *app_mod.App,
-    theme: theme_mod.Theme,
-    max_rows: usize,
-) u16 {
-    if (start_row >= win.height) return start_row;
-    if (app.environments.items.len == 0) {
-        drawLine(win, start_row, "  (none)", theme.muted);
-        return start_row + 1;
-    }
-
-    var row = start_row;
-    const focus = app.ui.left_panel != null and app.ui.left_panel.? == .environments;
-    var idx: usize = app.ui.environments_scroll;
-    var rendered: usize = 0;
-    while (idx < app.environments.items.len and row < win.height and rendered < max_rows) : (idx += 1) {
-        const env = app.environments.items[idx];
-        const selected = app.ui.selected_environment != null and app.ui.selected_environment.? == idx;
-        var style = if (selected and focus) theme.accent else theme.text;
-        if (selected and focus) style.reverse = true;
-        const marker = if (app.current_environment_index == idx) "*" else " ";
-        const prefix = if (selected) ">" else " ";
-        const line = std.fmt.allocPrint(allocator, " {s}{s} {s}", .{ marker, prefix, env.name }) catch return row;
-        drawLine(win, row, line, style);
-        row += 1;
-        rendered += 1;
-    }
-    return row;
-}
-
-fn renderHistoryList(
-    allocator: std.mem.Allocator,
-    win: vaxis.Window,
-    start_row: u16,
-    app: *app_mod.App,
-    theme: theme_mod.Theme,
-    max_rows: usize,
-) u16 {
-    if (start_row >= win.height) return start_row;
-    if (app.history.items.len == 0) {
-        drawLine(win, start_row, "  (none)", theme.muted);
-        return start_row + 1;
-    }
-
-    var row = start_row;
-    const focus = app.ui.left_panel != null and app.ui.left_panel.? == .history;
-    var idx: usize = app.ui.history_scroll;
-    var rendered: usize = 0;
-    while (idx < app.history.items.len and row < win.height and rendered < max_rows) : (idx += 1) {
-        const command = app.history.items[idx];
-        const selected = app.ui.selected_history != null and app.ui.selected_history.? == idx;
-        var style = if (selected and focus) theme.accent else theme.text;
-        if (selected and focus) style.reverse = true;
-        const prefix = if (selected) ">" else " ";
-        const line = std.fmt.allocPrint(allocator, " {s} {s}", .{ prefix, command.name }) catch return row;
-        drawLine(win, row, line, style);
-        row += 1;
-        rendered += 1;
-    }
-    return row;
-}
-
-fn availableRows(win: vaxis.Window, row: u16, remaining_headers: u16) usize {
-    if (row >= win.height) return 0;
-    const available = win.height - row;
-    if (available <= remaining_headers) return 0;
-    return @intCast(available - remaining_headers);
-}
-
-fn ensureScroll(scroll: *usize, selection: ?usize, total: usize, view: usize) void {
-    if (total == 0 or view == 0) {
-        scroll.* = 0;
-        return;
-    }
-    const idx = selection orelse return;
-    if (idx < scroll.*) scroll.* = idx;
-    if (idx >= scroll.* + view) scroll.* = idx - view + 1;
-    const max_scroll = if (total > view) total - view else 0;
-    if (scroll.* > max_scroll) scroll.* = max_scroll;
 }
