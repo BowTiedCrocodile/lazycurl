@@ -307,7 +307,7 @@ pub const App = struct {
                 } else {
                     if (self.isMethodSelected()) {
                         self.ui.selected_field = .{ .url = .url };
-                    } else if (self.isUrlValueSelected()) {
+                    } else if (self.isUrlColumnSelected()) {
                         self.focusLeftPanel(.history);
                     }
                 }
@@ -693,9 +693,9 @@ pub const App = struct {
         }
     }
 
-    fn isUrlValueSelected(self: *App) bool {
+    fn isUrlColumnSelected(self: *App) bool {
         return switch (self.ui.selected_field) {
-            .url => |field| field == .url,
+            .url => true,
             else => false,
         };
     }
