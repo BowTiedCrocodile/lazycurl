@@ -1,6 +1,7 @@
 const std = @import("std");
 const vaxis = @import("vaxis");
 const app_mod = @import("zvrl_app");
+const text_input = @import("zvrl_text_input");
 const theme_mod = @import("../theme.zig");
 const options_panel = @import("options_panel.zig");
 
@@ -55,18 +56,25 @@ pub fn render(
 
 fn renderUrlInput(win: vaxis.Window, app: *app_mod.App, theme: theme_mod.Theme) void {
     var title_style = theme.title;
-    if (app.state == .editing and app.editing_field != null and app.editing_field.? == .url) {
+    const is_editing = app.state == .editing and app.editing_field != null and app.editing_field.? == .url;
+    if (is_editing) {
         title_style = theme.accent;
     }
     drawLine(win, 0, "URL", title_style);
 
     const is_selected = isUrlSelected(app);
     var url_style = if (is_selected) theme.accent else theme.text;
-    if (app.state == .editing and app.editing_field != null and app.editing_field.? == .url) {
+    if (is_editing) {
         url_style = theme.accent;
         url_style.reverse = true;
     }
-    drawUrlValue(win, 1, app.current_command.url, url_style, theme.accent);
+    if (is_editing) {
+        var cursor_style = url_style;
+        cursor_style.reverse = true;
+        drawInputWithCursorPrefix(win, 1, app.ui.edit_input.slice(), app.ui.edit_input.cursor, url_style, cursor_style, app.ui.cursor_visible, "");
+    } else {
+        drawUrlValue(win, 1, app.current_command.url, url_style, theme.accent);
+    }
 }
 
 fn renderTabs(win: vaxis.Window, app: *app_mod.App, theme: theme_mod.Theme) void {
@@ -124,10 +132,18 @@ fn renderQueryParams(
         if (row >= win.height) break;
         const enabled = if (param.enabled) "[x]" else "[ ]";
         const is_selected = isQueryParamSelected(app, idx);
+        const is_editing = app.state == .editing and app.editing_field != null and app.editing_field.? == .query_param_value and is_selected;
         var style = if (is_selected) theme.accent else theme.text;
         if (is_selected) style.reverse = true;
-        const line = std.fmt.allocPrint(allocator, "{s} {s}={s}", .{ enabled, param.key, param.value }) catch return;
-        drawLine(win, row, line, style);
+        if (is_editing) {
+            const prefix = std.fmt.allocPrint(allocator, "{s} {s}=", .{ enabled, param.key }) catch return;
+            var cursor_style = style;
+            cursor_style.reverse = true;
+            drawInputWithCursorPrefix(win, row, app.ui.edit_input.slice(), app.ui.edit_input.cursor, style, cursor_style, app.ui.cursor_visible, prefix);
+        } else {
+            const line = std.fmt.allocPrint(allocator, "{s} {s}={s}", .{ enabled, param.key, param.value }) catch return;
+            drawLine(win, row, line, style);
+        }
         row += 1;
     }
 }
@@ -149,10 +165,18 @@ fn renderHeaders(
         if (row >= win.height) break;
         const enabled = if (header.enabled) "[x]" else "[ ]";
         const is_selected = isHeaderSelected(app, idx);
+        const is_editing = app.state == .editing and app.editing_field != null and app.editing_field.? == .header_value and is_selected;
         var style = if (is_selected) theme.accent else theme.text;
         if (is_selected) style.reverse = true;
-        const line = std.fmt.allocPrint(allocator, "{s} {s}: {s}", .{ enabled, header.key, header.value }) catch return;
-        drawLine(win, row, line, style);
+        if (is_editing) {
+            const prefix = std.fmt.allocPrint(allocator, "{s} {s}: ", .{ enabled, header.key }) catch return;
+            var cursor_style = style;
+            cursor_style.reverse = true;
+            drawInputWithCursorPrefix(win, row, app.ui.edit_input.slice(), app.ui.edit_input.cursor, style, cursor_style, app.ui.cursor_visible, prefix);
+        } else {
+            const line = std.fmt.allocPrint(allocator, "{s} {s}: {s}", .{ enabled, header.key, header.value }) catch return;
+            drawLine(win, row, line, style);
+        }
         row += 1;
     }
 }
@@ -176,6 +200,12 @@ fn renderBody(
     const content_selected = isBodyContentSelected(app);
     var content_style = if (content_selected) theme.accent else theme.text;
     if (content_selected) content_style.reverse = true;
+
+    const is_editing = app.state == .editing and app.editing_field != null and app.editing_field.? == .body;
+    if (is_editing) {
+        renderBodyInput(win, 3, &app.ui.body_input, content_style, theme.muted, app.ui.cursor_visible);
+        return;
+    }
 
     switch (app.current_command.body orelse .none) {
         .none => drawLine(win, 3, "No body", theme.muted),
@@ -263,6 +293,64 @@ fn drawLine(win: vaxis.Window, row: u16, text: []const u8, style: vaxis.Style) v
     if (row >= win.height) return;
     const segments = [_]vaxis.Segment{.{ .text = text, .style = style }};
     _ = win.print(&segments, .{ .row_offset = row, .wrap = .none });
+}
+
+fn drawInputWithCursorPrefix(
+    win: vaxis.Window,
+    row: u16,
+    value: []const u8,
+    cursor: usize,
+    style: vaxis.Style,
+    cursor_style: vaxis.Style,
+    cursor_visible: bool,
+    prefix: []const u8,
+) void {
+    if (row >= win.height) return;
+    const safe_cursor = @min(cursor, value.len);
+    const before = value[0..safe_cursor];
+    const cursor_char = if (safe_cursor < value.len) value[safe_cursor .. safe_cursor + 1] else " ";
+    const after = if (safe_cursor < value.len) value[safe_cursor + 1 ..] else "";
+
+    var segments: [4]vaxis.Segment = .{
+        .{ .text = prefix, .style = style },
+        .{ .text = before, .style = style },
+        .{ .text = cursor_char, .style = if (cursor_visible) cursor_style else style },
+        .{ .text = after, .style = style },
+    };
+    _ = win.print(segments[0..], .{ .row_offset = row, .wrap = .none });
+}
+
+fn renderBodyInput(
+    win: vaxis.Window,
+    start_row: u16,
+    input: *const text_input.TextInput,
+    style: vaxis.Style,
+    empty_style: vaxis.Style,
+    cursor_visible: bool,
+) void {
+    _ = empty_style;
+    var row = start_row;
+    const text = input.slice();
+    const cursor = input.cursorPosition();
+    var line_index: usize = 0;
+    var it = std.mem.splitScalar(u8, text, '\n');
+    while (it.next()) |line| {
+        if (row >= win.height) break;
+        if (line_index == cursor.row) {
+            var cursor_style = style;
+            cursor_style.reverse = true;
+            drawInputWithCursorPrefix(win, row, line, cursor.col, style, cursor_style, cursor_visible, "");
+        } else {
+            drawLine(win, row, line, style);
+        }
+        row += 1;
+        line_index += 1;
+    }
+    if (text.len == 0 and row < win.height) {
+        var cursor_style = style;
+        cursor_style.reverse = true;
+        drawInputWithCursorPrefix(win, row, "", 0, style, cursor_style, cursor_visible, "");
+    }
 }
 
 fn isUrlSelected(app: *app_mod.App) bool {

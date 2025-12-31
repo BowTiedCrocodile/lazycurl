@@ -31,6 +31,12 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
+    const text_input_mod = b.addModule("zvrl_text_input", .{
+        .root_source_file = b.path("src/zvrl/text_input.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
     const persistence_mod = b.addModule("zvrl_persistence", .{
         .root_source_file = b.path("src/zvrl/persistence/mod.zig"),
         .target = target,
@@ -49,6 +55,7 @@ pub fn build(b: *std.Build) void {
             .{ .name = "zvrl_command", .module = command_mod },
             .{ .name = "zvrl_execution", .module = execution_mod },
             .{ .name = "zvrl_persistence", .module = persistence_mod },
+            .{ .name = "zvrl_text_input", .module = text_input_mod },
             .{ .name = "vaxis", .module = vaxis_mod },
         },
     });
@@ -59,6 +66,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .imports = &.{
             .{ .name = "zvrl_app", .module = app_mod },
+            .{ .name = "zvrl_text_input", .module = text_input_mod },
             .{ .name = "vaxis", .module = vaxis_mod },
         },
     });
@@ -121,6 +129,7 @@ pub fn build(b: *std.Build) void {
                 .{ .name = "zvrl_command", .module = command_mod },
                 .{ .name = "zvrl_execution", .module = execution_mod },
                 .{ .name = "zvrl_persistence", .module = persistence_mod },
+                .{ .name = "zvrl_text_input", .module = text_input_mod },
                 .{ .name = "vaxis", .module = vaxis_mod },
             },
         }),

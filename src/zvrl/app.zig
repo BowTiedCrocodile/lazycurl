@@ -4,6 +4,7 @@ const vaxis = @import("vaxis");
 const execution = @import("zvrl_execution");
 const persistence = @import("zvrl_persistence");
 const command_builder = @import("zvrl_command");
+const text_input = @import("zvrl_text_input");
 
 pub const Runtime = struct {
     allocator: std.mem.Allocator,
@@ -127,6 +128,8 @@ pub const UiState = struct {
     method_dropdown_index: usize = 0,
     cursor_visible: bool = true,
     cursor_blink_counter: u8 = 0,
+    edit_input: text_input.TextInput,
+    body_input: text_input.TextInput,
 };
 
 pub const KeyCode = union(enum) {
@@ -138,6 +141,11 @@ pub const KeyCode = union(enum) {
     right,
     enter,
     escape,
+    backspace,
+    delete,
+    home,
+    end,
+    f2,
     char: u8,
 };
 
@@ -156,7 +164,7 @@ pub const App = struct {
     id_generator: core.IdGenerator = .{},
     state: AppState = .normal,
     editing_field: ?EditField = null,
-    ui: UiState = .{},
+    ui: UiState,
     current_command: core.models.command.CurlCommand,
     templates: std.ArrayList(core.models.template.CommandTemplate),
     environments: std.ArrayList(core.models.environment.Environment),
@@ -171,6 +179,8 @@ pub const App = struct {
         const templates = try persistence.seedTemplates(allocator, &generator);
         const environments = try persistence.seedEnvironments(allocator, &generator);
         const history = try std.ArrayList(core.models.command.CurlCommand).initCapacity(allocator, 0);
+        const edit_input = try text_input.TextInput.init(allocator);
+        const body_input = try text_input.TextInput.init(allocator);
 
         return .{
             .allocator = allocator,
@@ -179,6 +189,10 @@ pub const App = struct {
             .templates = templates,
             .environments = environments,
             .history = history,
+            .ui = .{
+                .edit_input = edit_input,
+                .body_input = body_input,
+            },
         };
     }
 
@@ -187,6 +201,8 @@ pub const App = struct {
         persistence.deinitTemplates(self.allocator, &self.templates);
         persistence.deinitEnvironments(self.allocator, &self.environments);
         persistence.deinitHistory(self.allocator, &self.history);
+        self.ui.edit_input.deinit();
+        self.ui.body_input.deinit();
     }
 
     pub fn handleKey(self: *App, input: KeyInput) !bool {
@@ -264,14 +280,18 @@ pub const App = struct {
     }
 
     fn handleEditingKey(self: *App, input: KeyInput) !bool {
-        switch (input.code) {
-            .escape => {
-                self.state = .normal;
-                self.editing_field = null;
-                return false;
-            },
-            else => return false,
+        if (input.code == .escape) {
+            self.state = .normal;
+            self.editing_field = null;
+            return false;
         }
+
+        const field = self.editing_field orelse return false;
+        if (field == .body) {
+            return self.handleBodyEditingKey(input);
+        }
+
+        return self.handleSingleLineEditingKey(input);
     }
 
     fn handleMethodDropdownKey(self: *App, input: KeyInput) !bool {
@@ -330,22 +350,53 @@ pub const App = struct {
                 .method => {
                     self.openMethodDropdown();
                 },
-                else => {
+                .url => {
                     self.state = .editing;
                     self.editing_field = .url;
+                    try self.ui.edit_input.reset(self.current_command.url);
+                },
+                .query_param => |idx| {
+                    if (idx < self.current_command.query_params.items.len) {
+                        self.state = .editing;
+                        self.editing_field = .query_param_value;
+                        try self.ui.edit_input.reset(self.current_command.query_params.items[idx].value);
+                    }
                 },
             },
             .headers => {
                 self.state = .editing;
                 self.editing_field = .header_value;
+                switch (self.ui.selected_field) {
+                    .headers => |idx| {
+                        if (idx < self.current_command.headers.items.len) {
+                            try self.ui.edit_input.reset(self.current_command.headers.items[idx].value);
+                        }
+                    },
+                    else => {},
+                }
             },
             .body => {
                 self.state = .editing;
                 self.editing_field = .body;
+                const content = if (self.current_command.body) |body| switch (body) {
+                    .raw => |payload| payload,
+                    else => "",
+                } else "";
+                try self.ui.body_input.reset(content);
             },
             .options => {
                 self.state = .editing;
                 self.editing_field = .option_value;
+                switch (self.ui.selected_field) {
+                    .options => |idx| {
+                        if (idx < self.current_command.options.items.len) {
+                            if (self.current_command.options.items[idx].value) |value| {
+                                try self.ui.edit_input.reset(value);
+                            }
+                        }
+                    },
+                    else => {},
+                }
             },
         }
     }
@@ -487,6 +538,159 @@ pub const App = struct {
         if (self.ui.cursor_blink_counter == 0) {
             self.ui.cursor_visible = !self.ui.cursor_visible;
         }
+    }
+
+    fn handleSingleLineEditingKey(self: *App, input: KeyInput) !bool {
+        switch (input.code) {
+            .enter => {
+                try self.commitSingleLineEdit();
+                return false;
+            },
+            .backspace => {
+                self.ui.edit_input.backspace();
+                return false;
+            },
+            .delete => {
+                self.ui.edit_input.delete();
+                return false;
+            },
+            .left => {
+                self.ui.edit_input.moveLeft();
+                return false;
+            },
+            .right => {
+                self.ui.edit_input.moveRight();
+                return false;
+            },
+            .home => {
+                self.ui.edit_input.moveHome();
+                return false;
+            },
+            .end => {
+                self.ui.edit_input.moveEnd();
+                return false;
+            },
+            .char => |ch| {
+                if (!input.mods.ctrl) {
+                    try self.ui.edit_input.insertByte(ch);
+                }
+                return false;
+            },
+            else => return false,
+        }
+    }
+
+    fn handleBodyEditingKey(self: *App, input: KeyInput) !bool {
+        if (input.code == .f2) {
+            try self.commitBodyEdit();
+            return false;
+        }
+        if (input.mods.ctrl) {
+            switch (input.code) {
+                .char => |ch| {
+                    if (ch == 's') {
+                        try self.commitBodyEdit();
+                        return false;
+                    }
+                },
+                else => {},
+            }
+        }
+
+        switch (input.code) {
+            .enter => {
+                try self.ui.body_input.insertByte('\n');
+                return false;
+            },
+            .backspace => {
+                self.ui.body_input.backspace();
+                return false;
+            },
+            .delete => {
+                self.ui.body_input.delete();
+                return false;
+            },
+            .left => {
+                self.ui.body_input.moveLeft();
+                return false;
+            },
+            .right => {
+                self.ui.body_input.moveRight();
+                return false;
+            },
+            .up => {
+                self.ui.body_input.moveUp();
+                return false;
+            },
+            .down => {
+                self.ui.body_input.moveDown();
+                return false;
+            },
+            .home => {
+                self.ui.body_input.moveHome();
+                return false;
+            },
+            .end => {
+                self.ui.body_input.moveEnd();
+                return false;
+            },
+            .char => |ch| {
+                if (!input.mods.ctrl) {
+                    try self.ui.body_input.insertByte(ch);
+                }
+                return false;
+            },
+            else => return false,
+        }
+    }
+
+    fn commitSingleLineEdit(self: *App) !void {
+        const value = self.ui.edit_input.slice();
+        switch (self.ui.selected_field) {
+            .url => |field| switch (field) {
+                .url => {
+                    self.allocator.free(self.current_command.url);
+                    self.current_command.url = try self.allocator.dupe(u8, value);
+                },
+                .query_param => |idx| {
+                    if (idx < self.current_command.query_params.items.len) {
+                        var param = &self.current_command.query_params.items[idx];
+                        self.allocator.free(param.value);
+                        param.value = try self.allocator.dupe(u8, value);
+                    }
+                },
+                .method => {},
+            },
+            .headers => |idx| {
+                if (idx < self.current_command.headers.items.len) {
+                    var header = &self.current_command.headers.items[idx];
+                    self.allocator.free(header.value);
+                    header.value = try self.allocator.dupe(u8, value);
+                }
+            },
+            .options => |idx| {
+                if (idx < self.current_command.options.items.len) {
+                    var option = &self.current_command.options.items[idx];
+                    if (option.value) |old| self.allocator.free(old);
+                    option.value = try self.allocator.dupe(u8, value);
+                }
+            },
+            .body => {},
+        }
+
+        self.state = .normal;
+        self.editing_field = null;
+    }
+
+    fn commitBodyEdit(self: *App) !void {
+        const value = self.ui.body_input.slice();
+        const payload = try self.allocator.dupe(u8, value);
+        if (self.current_command.body) |*body| {
+            body.deinit(self.allocator);
+        }
+        self.current_command.body = .{ .raw = payload };
+        self.state = .normal;
+        self.editing_field = null;
     }
 
     fn loadTemplate(self: *App, idx: usize) !void {

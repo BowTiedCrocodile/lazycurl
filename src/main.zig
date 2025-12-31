@@ -133,6 +133,11 @@ fn toKeyInput(key: vaxis.Key) ?app_mod.KeyInput {
     if (key.codepoint == vaxis.Key.right) return .{ .code = .right, .mods = modsFromKey(key) };
     if (key.codepoint == vaxis.Key.enter) return .{ .code = .enter, .mods = modsFromKey(key) };
     if (key.codepoint == vaxis.Key.escape) return .{ .code = .escape, .mods = modsFromKey(key) };
+    if (key.codepoint == vaxis.Key.backspace) return .{ .code = .backspace, .mods = modsFromKey(key) };
+    if (key.codepoint == vaxis.Key.delete) return .{ .code = .delete, .mods = modsFromKey(key) };
+    if (key.codepoint == vaxis.Key.home) return .{ .code = .home, .mods = modsFromKey(key) };
+    if (key.codepoint == vaxis.Key.end) return .{ .code = .end, .mods = modsFromKey(key) };
+    if (key.codepoint == vaxis.Key.f2) return .{ .code = .f2, .mods = modsFromKey(key) };
 
     const codepoint: u21 = if (key.mods.ctrl and key.base_layout_codepoint != null)
         key.base_layout_codepoint.?
