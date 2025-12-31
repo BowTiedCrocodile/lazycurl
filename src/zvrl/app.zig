@@ -401,6 +401,11 @@ pub const App = struct {
 
     pub fn addHistoryFromCurrent(self: *App) !void {
         const cloned = try cloneCommand(self.allocator, &self.id_generator, &self.current_command);
+        const max_history: usize = 100;
+        if (self.history.items.len >= max_history) {
+            var oldest = self.history.orderedRemove(0);
+            oldest.deinit();
+        }
         try self.history.append(self.allocator, cloned);
     }
 
