@@ -102,6 +102,21 @@ TVRL provides a terminal UI for building curl commands. The interface is divided
 
 Navigate through the application using keyboard shortcuts. See [SHORTCUTS.md](SHORTCUTS.md) for a complete list of keyboard shortcuts.
 
+### Keyboard Shortcuts (Zig)
+
+- `Ctrl+X` Quit
+- `Ctrl+R` or `F5` Execute command
+- `Ctrl+T` Toggle Templates panel
+- `Ctrl+E` Toggle Environments panel
+- `Ctrl+H` Toggle History panel
+- `Tab` / `Shift+Tab` Cycle tabs
+- Arrow keys Navigate fields and panels
+- `Enter` Edit field / confirm selection
+- `Esc` Cancel editing / close dropdown
+- `F2` or `Ctrl+S` Save body edits
+- `Backspace` / `Delete` Delete character or option
+- `Home` / `End` Move cursor in text inputs
+
 ### Basic Workflow
 
 1. Use the URL tab to set the request URL and method
