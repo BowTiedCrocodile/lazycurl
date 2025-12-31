@@ -311,6 +311,11 @@ pub const App = struct {
         return command_builder.builder.CommandBuilder.build(self.allocator, &self.current_command, environment);
     }
 
+    pub fn buildCommandPreview(self: *App, allocator: std.mem.Allocator) ![]u8 {
+        const environment = self.currentEnvironment();
+        return command_builder.builder.CommandBuilder.build(allocator, &self.current_command, environment);
+    }
+
     fn currentEnvironment(self: *App) *const core.models.environment.Environment {
         std.debug.assert(self.environments.items.len > 0);
         if (self.current_environment_index >= self.environments.items.len) {

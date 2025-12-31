@@ -5,6 +5,7 @@ const theme_mod = @import("theme.zig");
 const components = @import("components/mod.zig");
 
 pub fn render(
+    allocator: std.mem.Allocator,
     win: vaxis.Window,
     app: *app_mod.App,
     runtime: *app_mod.Runtime,
@@ -35,7 +36,7 @@ pub fn render(
         .height = status_h,
         .border = .{ .where = .all, .style = theme.border },
     });
-    components.status_bar.render(status_win, app, theme);
+    components.status_bar.render(allocator, status_win, app, theme);
 
     const templates_win = win.child(.{
         .x_off = 0,
@@ -44,7 +45,7 @@ pub fn render(
         .height = main_h,
         .border = .{ .where = .all, .style = theme.border },
     });
-    components.templates_panel.render(templates_win, app, theme);
+    components.templates_panel.render(allocator, templates_win, app, theme);
 
     if (method_w > 0) {
         const method_win = win.child(.{
@@ -54,7 +55,7 @@ pub fn render(
             .height = main_h,
             .border = .{ .where = .all, .style = theme.border },
         });
-        components.command_builder.render(method_win, app, theme);
+        components.command_builder.render(allocator, method_win, app, theme);
     }
 
     if (url_w > 0) {
@@ -64,11 +65,10 @@ pub fn render(
             .width = url_w,
             .height = main_h,
         });
-        components.url_container.render(url_win, app, theme);
+        components.url_container.render(allocator, url_win, app, theme);
     }
 
-    const command_preview = try app.executeCommand();
-    defer app.allocator.free(command_preview);
+    const command_preview = try app.buildCommandPreview(allocator);
 
     const command_win = win.child(.{
         .x_off = 0,
@@ -86,5 +86,5 @@ pub fn render(
         .height = output_h,
         .border = .{ .where = .all, .style = theme.border },
     });
-    components.output_panel.render(output_win, runtime, theme);
+    components.output_panel.render(allocator, output_win, runtime, theme);
 }

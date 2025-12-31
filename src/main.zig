@@ -116,8 +116,10 @@ fn render(
 ) !void {
     const win = vx.window();
     win.clear();
-    _ = allocator;
-    try ui.render(win, app, runtime);
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const frame_alloc = arena.allocator();
+    try ui.render(frame_alloc, win, app, runtime);
     try vx.render(tty);
 }
 

@@ -3,7 +3,12 @@ const vaxis = @import("vaxis");
 const app_mod = @import("zvrl_app");
 const theme_mod = @import("../theme.zig");
 
-pub fn render(win: vaxis.Window, app: *app_mod.App, theme: theme_mod.Theme) void {
+pub fn render(
+    allocator: std.mem.Allocator,
+    win: vaxis.Window,
+    app: *app_mod.App,
+    theme: theme_mod.Theme,
+) void {
     drawLine(win, 0, "Curl Options", theme.title);
 
     if (app.current_command.options.items.len == 0) {
@@ -19,11 +24,10 @@ pub fn render(win: vaxis.Window, app: *app_mod.App, theme: theme_mod.Theme) void
         var style = if (is_selected) theme.accent else theme.text;
         if (is_selected) style.reverse = true;
 
-        var buffer: [160]u8 = undefined;
         const line = if (option.value) |value|
-            std.fmt.bufPrint(&buffer, "{s} {s} {s}", .{ enabled, option.flag, value }) catch return
+            std.fmt.allocPrint(allocator, "{s} {s} {s}", .{ enabled, option.flag, value }) catch return
         else
-            std.fmt.bufPrint(&buffer, "{s} {s}", .{ enabled, option.flag }) catch return;
+            std.fmt.allocPrint(allocator, "{s} {s}", .{ enabled, option.flag }) catch return;
 
         drawLine(win, row, line, style);
         row += 1;

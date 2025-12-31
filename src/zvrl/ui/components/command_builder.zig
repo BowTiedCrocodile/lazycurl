@@ -3,7 +3,12 @@ const vaxis = @import("vaxis");
 const app_mod = @import("zvrl_app");
 const theme_mod = @import("../theme.zig");
 
-pub fn render(win: vaxis.Window, app: *app_mod.App, theme: theme_mod.Theme) void {
+pub fn render(
+    allocator: std.mem.Allocator,
+    win: vaxis.Window,
+    app: *app_mod.App,
+    theme: theme_mod.Theme,
+) void {
     drawLine(win, 0, "Method", theme.title);
 
     if (app.state == .method_dropdown) {
@@ -16,8 +21,7 @@ pub fn render(win: vaxis.Window, app: *app_mod.App, theme: theme_mod.Theme) void
     var style = if (is_selected) theme.accent else theme.text;
     if (is_selected) style.reverse = true;
 
-    var buffer: [64]u8 = undefined;
-    const line = std.fmt.bufPrint(&buffer, "{s} v", .{method.asString()}) catch return;
+    const line = std.fmt.allocPrint(allocator, "{s} v", .{method.asString()}) catch return;
     drawLine(win, 1, line, style);
     drawLine(win, 2, "Enter to change", theme.muted);
 }

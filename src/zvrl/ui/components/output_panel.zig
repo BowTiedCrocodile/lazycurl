@@ -3,7 +3,12 @@ const vaxis = @import("vaxis");
 const app_mod = @import("zvrl_app");
 const theme_mod = @import("../theme.zig");
 
-pub fn render(win: vaxis.Window, runtime: *app_mod.Runtime, theme: theme_mod.Theme) void {
+pub fn render(
+    allocator: std.mem.Allocator,
+    win: vaxis.Window,
+    runtime: *app_mod.Runtime,
+    theme: theme_mod.Theme,
+) void {
     drawLine(win, 0, "Output", theme.title);
 
     const status_line = if (runtime.active_job != null)
@@ -18,17 +23,16 @@ pub fn render(win: vaxis.Window, runtime: *app_mod.Runtime, theme: theme_mod.The
 
     var row: u16 = 2;
     if (runtime.last_result) |result| {
-        var buffer: [128]u8 = undefined;
         const exit_line = if (result.exit_code) |code|
-            std.fmt.bufPrint(&buffer, "Exit: {d}", .{code}) catch return
+            std.fmt.allocPrint(allocator, "Exit: {d}", .{code}) catch return
         else
-            std.fmt.bufPrint(&buffer, "Exit: unknown", .{}) catch return;
+            std.fmt.allocPrint(allocator, "Exit: unknown", .{}) catch return;
         const exit_style = if (result.exit_code != null and result.exit_code.? == 0) theme.success else theme.error_style;
         drawLine(win, row, exit_line, exit_style);
         row += 1;
 
         const duration_ms = result.duration_ns / std.time.ns_per_ms;
-        const dur_line = std.fmt.bufPrint(&buffer, "Time: {d} ms", .{duration_ms}) catch return;
+        const dur_line = std.fmt.allocPrint(allocator, "Time: {d} ms", .{duration_ms}) catch return;
         drawLine(win, row, dur_line, theme.muted);
         row += 1;
     }

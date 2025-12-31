@@ -4,7 +4,12 @@ const app_mod = @import("zvrl_app");
 const theme_mod = @import("../theme.zig");
 const options_panel = @import("options_panel.zig");
 
-pub fn render(win: vaxis.Window, app: *app_mod.App, theme: theme_mod.Theme) void {
+pub fn render(
+    allocator: std.mem.Allocator,
+    win: vaxis.Window,
+    app: *app_mod.App,
+    theme: theme_mod.Theme,
+) void {
     const width = win.width;
     const height = win.height;
 
@@ -44,7 +49,7 @@ pub fn render(win: vaxis.Window, app: *app_mod.App, theme: theme_mod.Theme) void
             .height = content_h,
             .border = .{ .where = .all, .style = theme.border },
         });
-        renderTabContent(content_win, app, theme);
+        renderTabContent(allocator, content_win, app, theme);
     }
 }
 
@@ -88,16 +93,26 @@ fn renderTabs(win: vaxis.Window, app: *app_mod.App, theme: theme_mod.Theme) void
     _ = win.print(segments[0..idx], .{ .row_offset = 0, .wrap = .none });
 }
 
-fn renderTabContent(win: vaxis.Window, app: *app_mod.App, theme: theme_mod.Theme) void {
+fn renderTabContent(
+    allocator: std.mem.Allocator,
+    win: vaxis.Window,
+    app: *app_mod.App,
+    theme: theme_mod.Theme,
+) void {
     switch (app.ui.active_tab) {
-        .url => renderQueryParams(win, app, theme),
-        .headers => renderHeaders(win, app, theme),
-        .body => renderBody(win, app, theme),
-        .options => options_panel.render(win, app, theme),
+        .url => renderQueryParams(allocator, win, app, theme),
+        .headers => renderHeaders(allocator, win, app, theme),
+        .body => renderBody(allocator, win, app, theme),
+        .options => options_panel.render(allocator, win, app, theme),
     }
 }
 
-fn renderQueryParams(win: vaxis.Window, app: *app_mod.App, theme: theme_mod.Theme) void {
+fn renderQueryParams(
+    allocator: std.mem.Allocator,
+    win: vaxis.Window,
+    app: *app_mod.App,
+    theme: theme_mod.Theme,
+) void {
     drawLine(win, 0, "Query Params", theme.title);
     if (app.current_command.query_params.items.len == 0) {
         drawLine(win, 1, "No query params", theme.muted);
@@ -111,14 +126,18 @@ fn renderQueryParams(win: vaxis.Window, app: *app_mod.App, theme: theme_mod.Them
         const is_selected = isQueryParamSelected(app, idx);
         var style = if (is_selected) theme.accent else theme.text;
         if (is_selected) style.reverse = true;
-        var buffer: [160]u8 = undefined;
-        const line = std.fmt.bufPrint(&buffer, "{s} {s}={s}", .{ enabled, param.key, param.value }) catch return;
+        const line = std.fmt.allocPrint(allocator, "{s} {s}={s}", .{ enabled, param.key, param.value }) catch return;
         drawLine(win, row, line, style);
         row += 1;
     }
 }
 
-fn renderHeaders(win: vaxis.Window, app: *app_mod.App, theme: theme_mod.Theme) void {
+fn renderHeaders(
+    allocator: std.mem.Allocator,
+    win: vaxis.Window,
+    app: *app_mod.App,
+    theme: theme_mod.Theme,
+) void {
     drawLine(win, 0, "Headers", theme.title);
     if (app.current_command.headers.items.len == 0) {
         drawLine(win, 1, "No headers", theme.muted);
@@ -132,14 +151,18 @@ fn renderHeaders(win: vaxis.Window, app: *app_mod.App, theme: theme_mod.Theme) v
         const is_selected = isHeaderSelected(app, idx);
         var style = if (is_selected) theme.accent else theme.text;
         if (is_selected) style.reverse = true;
-        var buffer: [160]u8 = undefined;
-        const line = std.fmt.bufPrint(&buffer, "{s} {s}: {s}", .{ enabled, header.key, header.value }) catch return;
+        const line = std.fmt.allocPrint(allocator, "{s} {s}: {s}", .{ enabled, header.key, header.value }) catch return;
         drawLine(win, row, line, style);
         row += 1;
     }
 }
 
-fn renderBody(win: vaxis.Window, app: *app_mod.App, theme: theme_mod.Theme) void {
+fn renderBody(
+    allocator: std.mem.Allocator,
+    win: vaxis.Window,
+    app: *app_mod.App,
+    theme: theme_mod.Theme,
+) void {
     drawLine(win, 0, "Body", theme.title);
 
     const selected_type = isBodyTypeSelected(app);
@@ -147,8 +170,7 @@ fn renderBody(win: vaxis.Window, app: *app_mod.App, theme: theme_mod.Theme) void
     if (selected_type) type_style.reverse = true;
 
     const body_type = bodyTypeLabel(app);
-    var buffer: [64]u8 = undefined;
-    const type_line = std.fmt.bufPrint(&buffer, "Type: {s}", .{body_type}) catch return;
+    const type_line = std.fmt.allocPrint(allocator, "Type: {s}", .{body_type}) catch return;
     drawLine(win, 1, type_line, type_style);
 
     const content_selected = isBodyContentSelected(app);
@@ -163,13 +185,13 @@ fn renderBody(win: vaxis.Window, app: *app_mod.App, theme: theme_mod.Theme) void
             for (list.items) |item| {
                 if (row >= win.height) break;
                 const enabled = if (item.enabled) "[x]" else "[ ]";
-                const line = std.fmt.bufPrint(&buffer, "{s} {s}={s}", .{ enabled, item.key, item.value }) catch return;
+                const line = std.fmt.allocPrint(allocator, "{s} {s}={s}", .{ enabled, item.key, item.value }) catch return;
                 drawLine(win, row, line, content_style);
                 row += 1;
             }
         },
         .binary => |payload| {
-            const line = std.fmt.bufPrint(&buffer, "Binary data: {d} bytes", .{payload.len}) catch return;
+            const line = std.fmt.allocPrint(allocator, "Binary data: {d} bytes", .{payload.len}) catch return;
             drawLine(win, 3, line, content_style);
         },
     }

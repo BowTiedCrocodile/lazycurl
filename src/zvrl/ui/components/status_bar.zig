@@ -3,17 +3,22 @@ const vaxis = @import("vaxis");
 const app_mod = @import("zvrl_app");
 const theme_mod = @import("../theme.zig");
 
-pub fn render(win: vaxis.Window, app: *app_mod.App, theme: theme_mod.Theme) void {
+pub fn render(
+    allocator: std.mem.Allocator,
+    win: vaxis.Window,
+    app: *app_mod.App,
+    theme: theme_mod.Theme,
+) void {
     const title = "Status";
     const state = stateLabel(app.state);
     const tab = tabLabel(app.ui.active_tab);
 
     drawLine(win, 0, title, theme.title);
-    drawKeyValue(win, 1, "State", state, theme);
-    drawKeyValue(win, 2, "Tab", tab, theme);
+    drawKeyValue(allocator, win, 1, "State", state, theme);
+    drawKeyValue(allocator, win, 2, "Tab", tab, theme);
 
     const env_name = currentEnvironmentName(app);
-    drawKeyValue(win, 3, "Env", env_name, theme);
+    drawKeyValue(allocator, win, 3, "Env", env_name, theme);
 
     const shortcuts = "Ctrl+Q Quit | Ctrl+R/F5 Run";
     drawLine(win, 4, shortcuts, theme.muted);
@@ -24,9 +29,15 @@ fn drawLine(win: vaxis.Window, row: u16, text: []const u8, style: vaxis.Style) v
     _ = win.print(&segments, .{ .row_offset = row, .wrap = .none });
 }
 
-fn drawKeyValue(win: vaxis.Window, row: u16, key: []const u8, value: []const u8, theme: theme_mod.Theme) void {
-    var buffer: [128]u8 = undefined;
-    const line = std.fmt.bufPrint(&buffer, "{s}: {s}", .{ key, value }) catch return;
+fn drawKeyValue(
+    allocator: std.mem.Allocator,
+    win: vaxis.Window,
+    row: u16,
+    key: []const u8,
+    value: []const u8,
+    theme: theme_mod.Theme,
+) void {
+    const line = std.fmt.allocPrint(allocator, "{s}: {s}", .{ key, value }) catch return;
     const segments = [_]vaxis.Segment{.{ .text = line, .style = theme.text }};
     _ = win.print(&segments, .{ .row_offset = row, .wrap = .none });
 }
