@@ -17,7 +17,7 @@
 - **Command Builder**: Method picker, URL + query params, headers table with enable/disable, body textarea supporting raw/form/binary, categorized curl option palette (command-line options vs active ones).
 - **Environment Handling**: Named environments with variable substitution syntax `{{key[:default]}}`, secrets flag, editing mode.
 - **Command Execution**: Build command string in real time, copy to clipboard (Ctrl+C), execute via F5/Ctrl+R, stream stdout/stderr, show exit code/time/errors, store history entry.
-- **Keyboard Shortcuts**: As documented in `SHORTCUTS.md` – navigation, toggles, creation (`Ctrl+N`), save template (`Ctrl+S`), etc.
+- **Keyboard Shortcuts**: Now documented in `README.md` (shortcuts section) – navigation, toggles, creation (`Ctrl+N`), save template (`Ctrl+S`), etc.
 - **Persistence Expectations**: Templates, environments, and history survive restarts; secrets encrypted; default templates/environments seeded on first run.
 
 ## Rust Dependencies Requiring Zig Replacements
@@ -38,7 +38,7 @@
 
 ## Migration Acceptance Checklist
 - [ ] Zig binary exposes identical panes/layout proportions as described above.
-- [ ] All keyboard shortcuts in `SHORTCUTS.md` behave the same, including template/history toggles and help modal.
+- [ ] All keyboard shortcuts in `README.md` (shortcuts section) behave the same, including template/history toggles and help modal.
 - [ ] Command preview updates in real time with identical quoting/ordering logic to Rust `CommandBuilder`.
 - [ ] Environment variable substitution accepts `{{var}}` and `{{var:default}}` forms everywhere (URL, headers, body, options).
 - [ ] Curl execution pipeline spawns system `curl`, streams stdout/stderr, and surfaces exit code + friendly error text.

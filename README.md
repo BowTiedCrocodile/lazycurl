@@ -100,7 +100,7 @@ TVRL provides a terminal UI for building curl commands. The interface is divided
 - **Templates**: Save and load frequently used commands
 - **Output**: View the output of executed commands
 
-Navigate through the application using keyboard shortcuts. See [SHORTCUTS.md](SHORTCUTS.md) for a complete list of keyboard shortcuts.
+Navigate through the application using the keyboard shortcuts below.
 
 ### Keyboard Shortcuts (Zig)
 
