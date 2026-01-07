@@ -65,12 +65,12 @@ pub fn main() !void {
         loop.queue.unlock();
 
         try runtime.tick();
-        if (runtime.last_result != null and !runtime.last_result_handled) {
-            if (runtime.last_result.?.exit_code != null and runtime.last_result.?.exit_code.? == 0) {
-                _ = app.addHistoryFromCurrent() catch {};
+            if (runtime.last_result != null and !runtime.last_result_handled) {
+                if (runtime.last_result.?.exit_code != null and runtime.last_result.?.exit_code.? == 0) {
+                    _ = app.addHistoryFromCurrent(&runtime) catch {};
+                }
+                runtime.last_result_handled = true;
             }
-            runtime.last_result_handled = true;
-        }
         app.toggleCursor();
         try render(allocator, &vx, tty.writer(), &app, &runtime);
     }
@@ -103,7 +103,7 @@ fn handleEvent(
             }
 
             if (toKeyInput(key)) |input| {
-                const should_exit = try app.handleKey(input);
+                const should_exit = try app.handleKey(input, runtime);
                 if (should_exit) {
                 running.* = false;
                 }

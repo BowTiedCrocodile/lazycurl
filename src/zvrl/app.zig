@@ -60,6 +60,13 @@ pub const Runtime = struct {
         }
     }
 
+    pub fn setResult(self: *Runtime, result: ?execution.executor.ExecutionResult) void {
+        self.clearStreamBuffers();
+        self.clearLastResult();
+        self.last_result = result;
+        self.last_result_handled = true;
+    }
+
     fn clearStreamBuffers(self: *Runtime) void {
         self.stream_stdout.clearRetainingCapacity();
         self.stream_stderr.clearRetainingCapacity();
@@ -138,7 +145,7 @@ pub const UiState = struct {
     left_panel: ?LeftPanel = null,
     templates_expanded: bool = true,
     environments_expanded: bool = true,
-    history_expanded: bool = false,
+    history_expanded: bool = true,
     templates_scroll: usize = 0,
     environments_scroll: usize = 0,
     history_scroll: usize = 0,
@@ -187,6 +194,7 @@ pub const App = struct {
     templates: std.ArrayList(core.models.template.CommandTemplate),
     environments: std.ArrayList(core.models.environment.Environment),
     history: std.ArrayList(core.models.command.CurlCommand),
+    history_results: std.ArrayList(?execution.executor.ExecutionResult),
     current_environment_index: usize = 0,
 
     pub fn init(allocator: std.mem.Allocator) !App {
@@ -197,6 +205,7 @@ pub const App = struct {
         const templates = try persistence.seedTemplates(allocator, &generator);
         const environments = try persistence.seedEnvironments(allocator, &generator);
         const history = try std.ArrayList(core.models.command.CurlCommand).initCapacity(allocator, 0);
+        const history_results = try std.ArrayList(?execution.executor.ExecutionResult).initCapacity(allocator, 0);
         const edit_input = try text_input.TextInput.init(allocator);
         const body_input = try text_input.TextInput.init(allocator);
 
@@ -207,6 +216,7 @@ pub const App = struct {
             .templates = templates,
             .environments = environments,
             .history = history,
+            .history_results = history_results,
             .ui = .{
                 .edit_input = edit_input,
                 .body_input = body_input,
@@ -219,20 +229,26 @@ pub const App = struct {
         persistence.deinitTemplates(self.allocator, &self.templates);
         persistence.deinitEnvironments(self.allocator, &self.environments);
         persistence.deinitHistory(self.allocator, &self.history);
+        for (self.history_results.items) |*maybe_result| {
+            if (maybe_result.*) |*result| {
+                result.deinit(self.allocator);
+            }
+        }
+        self.history_results.deinit(self.allocator);
         self.ui.edit_input.deinit();
         self.ui.body_input.deinit();
     }
 
-    pub fn handleKey(self: *App, input: KeyInput) !bool {
+    pub fn handleKey(self: *App, input: KeyInput, runtime: *Runtime) !bool {
         switch (self.state) {
-            .normal => return self.handleNormalKey(input),
+            .normal => return self.handleNormalKey(input, runtime),
             .editing => return self.handleEditingKey(input),
             .method_dropdown => return self.handleMethodDropdownKey(input),
             .exiting => return true,
         }
     }
 
-    fn handleNormalKey(self: *App, input: KeyInput) !bool {
+    fn handleNormalKey(self: *App, input: KeyInput, runtime: *Runtime) !bool {
         if (input.mods.ctrl) {
             switch (input.code) {
                 .char => |ch| {
@@ -328,7 +344,7 @@ pub const App = struct {
                             self.clearLeftPanelFocus();
                         },
                         .history => if (self.ui.selected_history) |idx| {
-                            try self.loadHistoryCommand(idx);
+                            try self.loadHistoryEntry(runtime, idx);
                             self.clearLeftPanelFocus();
                             self.ui.selected_field = .{ .url = .url };
                         },
@@ -399,14 +415,25 @@ pub const App = struct {
         return command_builder.builder.CommandBuilder.build(allocator, &self.current_command, environment);
     }
 
-    pub fn addHistoryFromCurrent(self: *App) !void {
+    pub fn addHistoryFromCurrent(self: *App, runtime: *Runtime) !void {
         const cloned = try cloneCommand(self.allocator, &self.id_generator, &self.current_command);
         const max_history: usize = 100;
         if (self.history.items.len >= max_history) {
             var oldest = self.history.orderedRemove(0);
             oldest.deinit();
+            if (self.history_results.items.len > 0) {
+                var oldest_result = self.history_results.orderedRemove(0);
+                if (oldest_result) |*result| {
+                    result.deinit(self.allocator);
+                }
+            }
         }
         try self.history.append(self.allocator, cloned);
+        const stored = if (runtime.last_result) |*result|
+            try cloneExecutionResult(self.allocator, result)
+        else
+            null;
+        try self.history_results.append(self.allocator, stored);
     }
 
     fn currentEnvironment(self: *App) *const core.models.environment.Environment {
@@ -890,11 +917,21 @@ pub const App = struct {
         self.current_command = cloned;
     }
 
-    fn loadHistoryCommand(self: *App, idx: usize) !void {
+    fn loadHistoryEntry(self: *App, runtime: *Runtime, idx: usize) !void {
         if (idx >= self.history.items.len) return;
         const cloned = try cloneCommand(self.allocator, &self.id_generator, &self.history.items[idx]);
         self.current_command.deinit();
         self.current_command = cloned;
+        if (idx < self.history_results.items.len) {
+            if (self.history_results.items[idx]) |*result| {
+                const restored = try cloneExecutionResult(self.allocator, result);
+                runtime.setResult(restored);
+            } else {
+                runtime.setResult(null);
+            }
+        } else {
+            runtime.setResult(null);
+        }
     }
 };
 
@@ -998,6 +1035,20 @@ fn cloneCommand(
     cloned.created_at = core.nowTimestamp();
     cloned.updated_at = cloned.created_at;
     return cloned;
+}
+
+fn cloneExecutionResult(
+    allocator: std.mem.Allocator,
+    source: *const execution.executor.ExecutionResult,
+) !execution.executor.ExecutionResult {
+    return .{
+        .command = try allocator.dupe(u8, source.command),
+        .exit_code = source.exit_code,
+        .stdout = try allocator.dupe(u8, source.stdout),
+        .stderr = try allocator.dupe(u8, source.stderr),
+        .duration_ns = source.duration_ns,
+        .error_message = if (source.error_message) |msg| try allocator.dupe(u8, msg) else null,
+    };
 }
 
 test "navigate field up from query param" {
