@@ -85,7 +85,7 @@ pub fn render(
             .height = status_h,
             .border = .{ .where = .all, .style = theme.border },
         });
-        components.shortcuts_panel.render(shortcuts_win, theme);
+        components.shortcuts_panel.render(shortcuts_win, app, theme);
     }
 
     const env_border = if (app.ui.left_panel != null and app.ui.left_panel.? == .environments) theme.accent else theme.border;
