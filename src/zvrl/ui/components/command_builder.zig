@@ -10,35 +10,42 @@ pub fn render(
     theme: theme_mod.Theme,
 ) void {
     drawLine(win, 0, "Method", theme.title);
-
-    if (app.state == .method_dropdown) {
-        renderDropdown(win, app, theme);
-        return;
-    }
-
-    const method = app.current_command.method orelse .get;
-    const is_selected = isMethodSelected(app);
-    var style = if (is_selected) theme.accent else theme.text;
-    if (is_selected) style.reverse = true;
-
-    const line = std.fmt.allocPrint(allocator, "{s} v", .{method.asString()}) catch return;
-    drawLine(win, 1, line, style);
-    drawLine(win, 2, "Enter to change", theme.muted);
+    renderMethodList(allocator, win, app, theme);
 }
 
-fn renderDropdown(win: vaxis.Window, app: *app_mod.App, theme: theme_mod.Theme) void {
+fn renderMethodList(
+    allocator: std.mem.Allocator,
+    win: vaxis.Window,
+    app: *app_mod.App,
+    theme: theme_mod.Theme,
+) void {
     const methods = methodLabels();
+    const current = app.current_command.method orelse .get;
+    const is_editing = app.state == .method_dropdown;
+    const focused = isMethodSelected(app) or is_editing;
+    const selected_index: usize = if (is_editing)
+        app.ui.method_dropdown_index
+    else
+        findMethodIndex(methods, current.asString());
+
     var row: u16 = 1;
     for (methods, 0..) |method, idx| {
         if (row >= win.height) break;
-        var style = if (idx == app.ui.method_dropdown_index) theme.accent else theme.text;
-        if (idx == app.ui.method_dropdown_index) style.reverse = true;
-        drawLine(win, row, method, style);
+        const is_current = methodMatches(method, current.asString());
+        const selected = idx == selected_index;
+        var style = if (is_current) theme.accent else theme.text;
+        if (focused and selected) style.reverse = true;
+
+        const marker = if (selected) ">" else " ";
+        const current_marker = if (is_current and !selected) "*" else " ";
+        const line = std.fmt.allocPrint(allocator, "{s}{s} {s}", .{ marker, current_marker, method }) catch return;
+        drawLine(win, row, line, style);
         row += 1;
     }
 
     if (row < win.height) {
-        drawLine(win, row, "Esc to cancel", theme.muted);
+        const hint = if (is_editing) "Enter to select" else "Enter to change";
+        drawLine(win, row, hint, theme.muted);
     }
 }
 
@@ -68,4 +75,15 @@ fn methodLabels() []const []const u8 {
         "TRACE",
         "CONNECT",
     };
+}
+
+fn methodMatches(label: []const u8, current: []const u8) bool {
+    return std.mem.eql(u8, label, current);
+}
+
+fn findMethodIndex(methods: []const []const u8, current: []const u8) usize {
+    for (methods, 0..) |label, idx| {
+        if (std.mem.eql(u8, label, current)) return idx;
+    }
+    return 0;
 }
