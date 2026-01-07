@@ -145,6 +145,7 @@ pub const UiState = struct {
     edit_input: text_input.TextInput,
     body_input: text_input.TextInput,
     editing_template_index: ?usize = null,
+    new_folder_active: bool = false,
     left_panel: ?LeftPanel = null,
     templates_expanded: bool = true,
     environments_expanded: bool = true,
@@ -311,7 +312,9 @@ pub const App = struct {
                 self.state = .editing;
                 self.editing_field = .template_folder;
                 self.ui.editing_template_index = null;
+                self.ui.new_folder_active = true;
                 try self.ui.edit_input.reset("New Folder");
+                self.ui.selected_template_row = 0;
                 return false;
             }
         }
@@ -447,6 +450,7 @@ pub const App = struct {
             self.state = .normal;
             self.editing_field = null;
             self.ui.editing_template_index = null;
+            self.ui.new_folder_active = false;
             return false;
         }
 
@@ -992,21 +996,29 @@ pub const App = struct {
             }
             if (field == .template_folder) {
                 const trimmed = std.mem.trim(u8, value, " \t\r\n");
-                if (trimmed.len > 0) {
+                if (self.ui.new_folder_active) {
+                    if (trimmed.len > 0 and !self.hasTemplateFolder(trimmed)) {
+                        try self.templates_folders.append(self.allocator, try self.allocator.dupe(u8, trimmed));
+                        try persistence.saveTemplates(self.allocator, self.templates.items, self.templates_folders.items);
+                    }
+                } else if (trimmed.len > 0) {
                     if (try self.selectedTemplateRow()) |row| {
                         if (row.kind == .folder and !std.mem.eql(u8, row.category, trimmed)) {
                             try self.renameTemplateFolder(row.category, trimmed);
+                            try persistence.saveTemplates(self.allocator, self.templates.items, self.templates_folders.items);
                         } else if (row.kind != .folder and !self.hasTemplateFolder(trimmed)) {
                             try self.templates_folders.append(self.allocator, try self.allocator.dupe(u8, trimmed));
+                            try persistence.saveTemplates(self.allocator, self.templates.items, self.templates_folders.items);
                         }
                     } else if (!self.hasTemplateFolder(trimmed)) {
                         try self.templates_folders.append(self.allocator, try self.allocator.dupe(u8, trimmed));
+                        try persistence.saveTemplates(self.allocator, self.templates.items, self.templates_folders.items);
                     }
-                    try persistence.saveTemplates(self.allocator, self.templates.items, self.templates_folders.items);
                 }
                 self.state = .normal;
                 self.editing_field = null;
                 self.ui.editing_template_index = null;
+                self.ui.new_folder_active = false;
                 return;
             }
         }
@@ -1113,7 +1125,16 @@ pub const App = struct {
             }
         }
 
-        var rows = try std.ArrayList(TemplateRow).initCapacity(allocator, self.templates.items.len + categories.items.len);
+        var rows = try std.ArrayList(TemplateRow).initCapacity(allocator, self.templates.items.len + categories.items.len + 1);
+        if (self.ui.new_folder_active) {
+            const label = if (self.ui.edit_input.slice().len > 0) self.ui.edit_input.slice() else "New Folder";
+            try rows.append(allocator, .{
+                .kind = .folder,
+                .category = label,
+                .template_index = null,
+                .collapsed = false,
+            });
+        }
         for (categories.items) |category| {
             const collapsed = self.templates_collapsed.get(category) orelse false;
             try rows.append(allocator, .{
