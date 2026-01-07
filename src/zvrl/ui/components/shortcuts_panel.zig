@@ -4,15 +4,14 @@ const theme_mod = @import("../theme.zig");
 
 pub fn render(win: vaxis.Window, app: *app_mod.App, theme: theme_mod.Theme) void {
     drawLine(win, 0, "Shortcuts", theme.title);
-    drawLine(win, 1, "Ctrl+X Quit", theme.text);
-    drawLine(win, 2, "Ctrl+R/F5 Run", theme.text);
-    drawLine(win, 3, "Enter Edit", theme.text);
-    drawLine(win, 4, "Tab Cycle", theme.text);
+    if (win.height < 2) return;
+    drawLine(win, 1, "Ctrl+X Quit | Ctrl+R/F5 Run", theme.text);
+    if (win.height < 3) return;
+    drawLine(win, 2, "Enter Edit | Tab Cycle", theme.text);
 
-    const section_row: u16 = 6;
-    if (section_row >= win.height) return;
-    drawLine(win, section_row, "Context", theme.title);
-    renderContext(win, app, theme, section_row + 1);
+    if (win.height < 4) return;
+    drawLine(win, 3, "Context", theme.title);
+    renderContext(win, app, theme, 4);
 }
 
 fn drawLine(win: vaxis.Window, row: u16, text: []const u8, style: vaxis.Style) void {
