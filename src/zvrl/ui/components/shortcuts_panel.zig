@@ -35,6 +35,7 @@ fn contextLines(app: *app_mod.App) []const []const u8 {
                 "F2 Rename",
                 "F3 Save Template",
                 "F4 New Folder",
+                "F6 Delete Folder",
             },
             .environments => &[_][]const u8{
                 "Enter Select",

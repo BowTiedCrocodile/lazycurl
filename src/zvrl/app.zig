@@ -188,6 +188,7 @@ pub const KeyCode = union(enum) {
     f2,
     f3,
     f4,
+    f6,
     f10,
     char: u8,
 };
@@ -280,11 +281,21 @@ pub const App = struct {
     fn handleNormalKey(self: *App, input: KeyInput, runtime: *Runtime) !bool {
         if (input.code == .f2) {
             if (self.ui.left_panel != null and self.ui.left_panel.? == .templates) {
-                if (try self.selectedTemplateIndex()) |idx| {
-                    self.state = .editing;
-                    self.editing_field = .template_name;
-                    self.ui.editing_template_index = idx;
-                    try self.ui.edit_input.reset(self.templates.items[idx].name);
+                if (try self.selectedTemplateRow()) |row| {
+                    switch (row.kind) {
+                        .template => if (row.template_index) |idx| {
+                            self.state = .editing;
+                            self.editing_field = .template_name;
+                            self.ui.editing_template_index = idx;
+                            try self.ui.edit_input.reset(self.templates.items[idx].name);
+                        },
+                        .folder => {
+                            self.state = .editing;
+                            self.editing_field = .template_folder;
+                            self.ui.editing_template_index = null;
+                            try self.ui.edit_input.reset(row.category);
+                        },
+                    }
                 }
                 return false;
             }
@@ -302,6 +313,17 @@ pub const App = struct {
                 self.ui.editing_template_index = null;
                 try self.ui.edit_input.reset("New Folder");
                 return false;
+            }
+        }
+        if (input.code == .f6) {
+            if (self.ui.left_panel != null and self.ui.left_panel.? == .templates) {
+                if (try self.selectedTemplateRow()) |row| {
+                    if (row.kind == .folder) {
+                        try self.deleteTemplateFolder(row.category);
+                        self.ensureTemplateSelection();
+                        return false;
+                    }
+                }
             }
         }
         if (input.mods.ctrl) {
@@ -647,12 +669,7 @@ pub const App = struct {
         self.ui.left_panel = panel;
         switch (panel) {
             .templates => {
-                const row_count = self.templateRowCount() catch 0;
-                if (row_count == 0) {
-                    self.ui.selected_template_row = null;
-                } else if (self.ui.selected_template_row == null or self.ui.selected_template_row.? >= row_count) {
-                    self.ui.selected_template_row = 0;
-                }
+                self.ensureTemplateSelection();
             },
             .environments => {
                 if (self.environments.items.len == 0) {
@@ -976,10 +993,16 @@ pub const App = struct {
             if (field == .template_folder) {
                 const trimmed = std.mem.trim(u8, value, " \t\r\n");
                 if (trimmed.len > 0) {
-                    if (!self.hasTemplateFolder(trimmed)) {
+                    if (try self.selectedTemplateRow()) |row| {
+                        if (row.kind == .folder and !std.mem.eql(u8, row.category, trimmed)) {
+                            try self.renameTemplateFolder(row.category, trimmed);
+                        } else if (row.kind != .folder and !self.hasTemplateFolder(trimmed)) {
+                            try self.templates_folders.append(self.allocator, try self.allocator.dupe(u8, trimmed));
+                        }
+                    } else if (!self.hasTemplateFolder(trimmed)) {
                         try self.templates_folders.append(self.allocator, try self.allocator.dupe(u8, trimmed));
-                        try persistence.saveTemplates(self.allocator, self.templates.items, self.templates_folders.items);
                     }
+                    try persistence.saveTemplates(self.allocator, self.templates.items, self.templates_folders.items);
                 }
                 self.state = .normal;
                 self.editing_field = null;
@@ -1165,6 +1188,57 @@ pub const App = struct {
             template.command.name = try template.command.allocator.dupe(u8, template.name);
         }
         try self.templates.append(self.allocator, template);
+        try persistence.saveTemplates(self.allocator, self.templates.items, self.templates_folders.items);
+    }
+
+    fn ensureTemplateSelection(self: *App) void {
+        const row_count = self.templateRowCount() catch 0;
+        if (row_count == 0) {
+            self.ui.selected_template_row = null;
+        } else if (self.ui.selected_template_row == null or self.ui.selected_template_row.? >= row_count) {
+            self.ui.selected_template_row = 0;
+        }
+    }
+
+    fn renameTemplateFolder(self: *App, from: []const u8, to: []const u8) !void {
+        for (self.templates_folders.items) |*folder| {
+            if (std.mem.eql(u8, folder.*, from)) {
+                self.allocator.free(folder.*);
+                folder.* = try self.allocator.dupe(u8, to);
+                break;
+            }
+        }
+        for (self.templates.items) |*template| {
+            if (template.category) |category| {
+                if (std.mem.eql(u8, category, from)) {
+                    template.allocator.free(category);
+                    template.category = try template.allocator.dupe(u8, to);
+                    template.updated_at = core.nowTimestamp();
+                }
+            }
+        }
+        _ = self.templates_collapsed.remove(from);
+    }
+
+    fn deleteTemplateFolder(self: *App, name: []const u8) !void {
+        var idx: usize = 0;
+        while (idx < self.templates_folders.items.len) : (idx += 1) {
+            if (std.mem.eql(u8, self.templates_folders.items[idx], name)) {
+                const removed = self.templates_folders.orderedRemove(idx);
+                self.allocator.free(removed);
+                break;
+            }
+        }
+        for (self.templates.items) |*template| {
+            if (template.category) |category| {
+                if (std.mem.eql(u8, category, name)) {
+                    template.allocator.free(category);
+                    template.category = null;
+                    template.updated_at = core.nowTimestamp();
+                }
+            }
+        }
+        _ = self.templates_collapsed.remove(name);
         try persistence.saveTemplates(self.allocator, self.templates.items, self.templates_folders.items);
     }
 
