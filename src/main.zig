@@ -89,7 +89,7 @@ fn handleEvent(
             vx.queueRefresh();
         },
         .key_press => |key| {
-            if (key.matchShortcut('x', .{ .ctrl = true })) {
+            if (key.matchShortcut('x', .{ .ctrl = true }) or key.codepoint == vaxis.Key.f10) {
                 running.* = false;
                 return;
             }
@@ -146,6 +146,9 @@ fn toKeyInput(key: vaxis.Key) ?app_mod.KeyInput {
     if (key.codepoint == vaxis.Key.home) return .{ .code = .home, .mods = modsFromKey(key) };
     if (key.codepoint == vaxis.Key.end) return .{ .code = .end, .mods = modsFromKey(key) };
     if (key.codepoint == vaxis.Key.f2) return .{ .code = .f2, .mods = modsFromKey(key) };
+    if (key.codepoint == vaxis.Key.f3) return .{ .code = .f3, .mods = modsFromKey(key) };
+    if (key.codepoint == vaxis.Key.f4) return .{ .code = .f4, .mods = modsFromKey(key) };
+    if (key.codepoint == vaxis.Key.f10) return .{ .code = .f10, .mods = modsFromKey(key) };
 
     if (!key.mods.ctrl) {
         if (key.text) |text| {

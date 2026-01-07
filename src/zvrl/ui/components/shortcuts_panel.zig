@@ -33,7 +33,8 @@ fn contextLines(app: *app_mod.App) []const []const u8 {
             .templates => &[_][]const u8{
                 "Enter Load/Toggle",
                 "F2 Rename",
-                "Ctrl+S Save Template",
+                "F3 Save Template",
+                "F4 New Folder",
             },
             .environments => &[_][]const u8{
                 "Enter Select",
@@ -51,8 +52,8 @@ fn contextLines(app: *app_mod.App) []const []const u8 {
 
 fn baseLines() []const []const u8 {
     return &[_][]const u8{
-        "Ctrl+X Quit",
-        "Ctrl+R/F5 Run",
+        "F5 Run",
+        "F10 Quit",
     };
 }
 

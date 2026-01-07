@@ -54,7 +54,12 @@ pub fn ensureStorageDirs(paths: *const StoragePaths) !void {
     try cwd.makePath(paths.environments_dir);
 }
 
-pub fn loadTemplates(allocator: Allocator, generator: *core.IdGenerator) !std.ArrayList(CommandTemplate) {
+pub const TemplateStore = struct {
+    templates: std.ArrayList(CommandTemplate),
+    folders: std.ArrayList([]u8),
+};
+
+pub fn loadTemplates(allocator: Allocator, generator: *core.IdGenerator) !TemplateStore {
     var paths = try resolvePaths(allocator);
     defer paths.deinit(allocator);
 
@@ -65,7 +70,11 @@ pub fn loadTemplates(allocator: Allocator, generator: *core.IdGenerator) !std.Ar
         defer allocator.free(data);
         return parseTemplatesJson(allocator, generator, data);
     } else |err| switch (err) {
-        error.FileNotFound => return seedTemplates(allocator, generator),
+        error.FileNotFound => {
+            const templates = try seedTemplates(allocator, generator);
+            const folders = try buildFolderList(allocator, templates.items);
+            return .{ .templates = templates, .folders = folders };
+        },
         else => return err,
     }
 }
@@ -98,7 +107,7 @@ pub fn loadHistory(allocator: Allocator) !std.ArrayList(CurlCommand) {
     }
 }
 
-pub fn saveTemplates(allocator: Allocator, templates: []const CommandTemplate) !void {
+pub fn saveTemplates(allocator: Allocator, templates: []const CommandTemplate, folders: []const []const u8) !void {
     var paths = try resolvePaths(allocator);
     defer paths.deinit(allocator);
     try ensureStorageDirs(&paths);
@@ -110,7 +119,7 @@ pub fn saveTemplates(allocator: Allocator, templates: []const CommandTemplate) !
     defer arena.deinit();
     const arena_alloc = arena.allocator();
 
-    const payload = try buildTemplatesJson(arena_alloc, templates);
+    const payload = try buildTemplatesJson(arena_alloc, templates, folders);
     var buffer: [4096]u8 = undefined;
     var writer = file.writer(&buffer);
     try std.json.Stringify.value(payload, .{ .whitespace = .indent_2 }, &writer.interface);
@@ -134,6 +143,7 @@ pub fn saveHistory(allocator: Allocator, history: []const CurlCommand) !void {
 }
 
 const JsonTemplateFile = struct {
+    folders: ?[]const []const u8 = null,
     templates: []JsonTemplate,
 };
 
@@ -190,7 +200,11 @@ const JsonFormData = struct {
     enabled: bool,
 };
 
-fn buildTemplatesJson(allocator: Allocator, templates: []const CommandTemplate) !JsonTemplateFile {
+fn buildTemplatesJson(
+    allocator: Allocator,
+    templates: []const CommandTemplate,
+    folders: []const []const u8,
+) !JsonTemplateFile {
     var list = try std.ArrayList(JsonTemplate).initCapacity(allocator, templates.len);
     for (templates) |template| {
         const command = template.command;
@@ -265,14 +279,14 @@ fn buildTemplatesJson(allocator: Allocator, templates: []const CommandTemplate) 
         });
     }
 
-    return .{ .templates = list.items };
+    return .{ .folders = folders, .templates = list.items };
 }
 
 fn parseTemplatesJson(
     allocator: Allocator,
     generator: *core.IdGenerator,
     data: []const u8,
-) !std.ArrayList(CommandTemplate) {
+) !TemplateStore {
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
     const parsed = try std.json.parseFromSlice(JsonTemplateFile, arena.allocator(), data, .{});
@@ -280,6 +294,13 @@ fn parseTemplatesJson(
     const file = parsed.value;
 
     var templates = try std.ArrayList(CommandTemplate).initCapacity(allocator, file.templates.len);
+    var folders = try std.ArrayList([]u8).initCapacity(allocator, 0);
+    if (file.folders) |items| {
+        try folders.ensureTotalCapacity(allocator, items.len);
+        for (items) |name| {
+            try folders.append(allocator, try allocator.dupe(u8, name));
+        }
+    }
     for (file.templates) |record| {
         var command = try CurlCommand.init(allocator, generator);
         errdefer command.deinit();
@@ -376,7 +397,10 @@ fn parseTemplatesJson(
         try templates.append(allocator, template);
     }
 
-    return templates;
+    if (folders.items.len == 0) {
+        folders = try buildFolderList(allocator, templates.items);
+    }
+    return .{ .templates = templates, .folders = folders };
 }
 
 fn parseMethod(label: []const u8) ?core.models.command.HttpMethod {
@@ -390,6 +414,27 @@ fn parseMethod(label: []const u8) ?core.models.command.HttpMethod {
     if (std.ascii.eqlIgnoreCase(label, "TRACE")) return .trace;
     if (std.ascii.eqlIgnoreCase(label, "CONNECT")) return .connect;
     return null;
+}
+
+fn buildFolderList(
+    allocator: Allocator,
+    templates: []const CommandTemplate,
+) !std.ArrayList([]u8) {
+    var folders = try std.ArrayList([]u8).initCapacity(allocator, 0);
+    for (templates) |template| {
+        const category = template.category orelse "Ungrouped";
+        var exists = false;
+        for (folders.items) |folder| {
+            if (std.mem.eql(u8, folder, category)) {
+                exists = true;
+                break;
+            }
+        }
+        if (!exists) {
+            try folders.append(allocator, try allocator.dupe(u8, category));
+        }
+    }
+    return folders;
 }
 
 pub fn seedTemplates(allocator: Allocator, generator: *core.IdGenerator) !std.ArrayList(CommandTemplate) {
@@ -439,6 +484,13 @@ pub fn deinitTemplates(allocator: Allocator, templates: *std.ArrayList(CommandTe
         template.deinit();
     }
     templates.deinit(allocator);
+}
+
+pub fn deinitTemplateFolders(allocator: Allocator, folders: *std.ArrayList([]u8)) void {
+    for (folders.items) |folder| {
+        allocator.free(folder);
+    }
+    folders.deinit(allocator);
 }
 
 pub fn deinitEnvironments(allocator: Allocator, environments: *std.ArrayList(Environment)) void {

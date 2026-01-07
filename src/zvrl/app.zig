@@ -105,6 +105,7 @@ pub const EditField = enum {
     body,
     option_value,
     template_name,
+    template_folder,
 };
 
 pub const Tab = enum {
@@ -185,6 +186,9 @@ pub const KeyCode = union(enum) {
     home,
     end,
     f2,
+    f3,
+    f4,
+    f10,
     char: u8,
 };
 
@@ -206,6 +210,7 @@ pub const App = struct {
     ui: UiState,
     current_command: core.models.command.CurlCommand,
     templates: std.ArrayList(core.models.template.CommandTemplate),
+    templates_folders: std.ArrayList([]u8),
     templates_collapsed: std.StringHashMap(bool),
     environments: std.ArrayList(core.models.environment.Environment),
     history: std.ArrayList(core.models.command.CurlCommand),
@@ -218,7 +223,7 @@ pub const App = struct {
         var current_command = try core.models.command.CurlCommand.init(allocator, &generator);
         try current_command.addOption(&generator, "-i", null);
 
-        const templates = try persistence.loadTemplates(allocator, &generator);
+        const template_store = try persistence.loadTemplates(allocator, &generator);
         const environments = try persistence.seedEnvironments(allocator, &generator);
         const history = try std.ArrayList(core.models.command.CurlCommand).initCapacity(allocator, 0);
         const history_results = try std.ArrayList(?execution.executor.ExecutionResult).initCapacity(allocator, 0);
@@ -230,7 +235,8 @@ pub const App = struct {
             .allocator = allocator,
             .id_generator = generator,
             .current_command = current_command,
-            .templates = templates,
+            .templates = template_store.templates,
+            .templates_folders = template_store.folders,
             .templates_collapsed = templates_collapsed,
             .environments = environments,
             .history = history,
@@ -245,6 +251,7 @@ pub const App = struct {
     pub fn deinit(self: *App) void {
         self.current_command.deinit();
         persistence.deinitTemplates(self.allocator, &self.templates);
+        persistence.deinitTemplateFolders(self.allocator, &self.templates_folders);
         self.templates_collapsed.deinit();
         persistence.deinitEnvironments(self.allocator, &self.environments);
         persistence.deinitHistory(self.allocator, &self.history);
@@ -282,16 +289,27 @@ pub const App = struct {
                 return false;
             }
         }
+        if (input.code == .f3) {
+            if (self.ui.left_panel != null and self.ui.left_panel.? == .templates) {
+                try self.saveTemplateFromCurrent();
+                return false;
+            }
+        }
+        if (input.code == .f4) {
+            if (self.ui.left_panel != null and self.ui.left_panel.? == .templates) {
+                self.state = .editing;
+                self.editing_field = .template_folder;
+                self.ui.editing_template_index = null;
+                try self.ui.edit_input.reset("New Folder");
+                return false;
+            }
+        }
         if (input.mods.ctrl) {
             switch (input.code) {
                 .char => |ch| {
                     if (ch == 'x') {
                         self.state = .exiting;
                         return true;
-                    }
-                    if (ch == 's') {
-                        try self.saveTemplateFromCurrent();
-                        return false;
                     }
                     if (ch == 't') {
                         self.ui.templates_expanded = !self.ui.templates_expanded;
@@ -947,7 +965,20 @@ pub const App = struct {
                         template.command.allocator.free(template.command.name);
                         template.command.name = try template.command.allocator.dupe(u8, value);
                         template.updated_at = core.nowTimestamp();
-                        try persistence.saveTemplates(self.allocator, self.templates.items);
+                        try persistence.saveTemplates(self.allocator, self.templates.items, self.templates_folders.items);
+                    }
+                }
+                self.state = .normal;
+                self.editing_field = null;
+                self.ui.editing_template_index = null;
+                return;
+            }
+            if (field == .template_folder) {
+                const trimmed = std.mem.trim(u8, value, " \t\r\n");
+                if (trimmed.len > 0) {
+                    if (!self.hasTemplateFolder(trimmed)) {
+                        try self.templates_folders.append(self.allocator, try self.allocator.dupe(u8, trimmed));
+                        try persistence.saveTemplates(self.allocator, self.templates.items, self.templates_folders.items);
                     }
                 }
                 self.state = .normal;
@@ -1039,9 +1070,12 @@ pub const App = struct {
     }
 
     pub fn buildTemplateRows(self: *App, allocator: std.mem.Allocator) !std.ArrayList(TemplateRow) {
-        var categories = try std.ArrayList([]const u8).initCapacity(allocator, 4);
+        var categories = try std.ArrayList([]const u8).initCapacity(allocator, self.templates_folders.items.len + 4);
         defer categories.deinit(allocator);
 
+        for (self.templates_folders.items) |folder| {
+            try categories.append(allocator, folder);
+        }
         for (self.templates.items) |template| {
             const category = templateCategory(template);
             var exists = false;
@@ -1131,7 +1165,14 @@ pub const App = struct {
             template.command.name = try template.command.allocator.dupe(u8, template.name);
         }
         try self.templates.append(self.allocator, template);
-        try persistence.saveTemplates(self.allocator, self.templates.items);
+        try persistence.saveTemplates(self.allocator, self.templates.items, self.templates_folders.items);
+    }
+
+    fn hasTemplateFolder(self: *App, name: []const u8) bool {
+        for (self.templates_folders.items) |folder| {
+            if (std.mem.eql(u8, folder, name)) return true;
+        }
+        return false;
     }
 };
 
