@@ -41,9 +41,17 @@ fn columnLayout(width: u16) Columns {
     if (total <= 10) {
         return .{ .method_w = total, .url_w = 0, .name_w = 0 };
     }
-    const method_w: usize = 7;
-    const url_w: usize = @min(@max(@as(usize, 12), total / 3), total - method_w - 2);
-    const name_w: usize = if (total > method_w + url_w + 2) total - method_w - url_w - 2 else 0;
+    const method_w: usize = 8;
+    const min_url: usize = 20;
+    const min_name: usize = 12;
+    var url_w: usize = @min(@max(min_url, (total * 5) / 10), total - method_w - 2);
+    var name_w: usize = if (total > method_w + url_w + 2) total - method_w - url_w - 2 else 0;
+    if (name_w < min_name and url_w > min_url) {
+        const needed = min_name - name_w;
+        const shrink = @min(needed, url_w - min_url);
+        url_w -= shrink;
+        name_w = if (total > method_w + url_w + 2) total - method_w - url_w - 2 else 0;
+    }
     return .{ .method_w = method_w, .url_w = url_w, .name_w = name_w };
 }
 
