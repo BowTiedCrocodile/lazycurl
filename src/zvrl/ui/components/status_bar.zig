@@ -14,14 +14,10 @@ pub fn render(
     const tab = tabLabel(app.ui.active_tab);
 
     drawLine(win, 0, title, theme.title);
-    drawKeyValue(allocator, win, 1, "State", state, theme);
-    drawKeyValue(allocator, win, 2, "Tab", tab, theme);
+    drawKeyPair(allocator, win, 1, "State", state, "Tab", tab, theme);
 
     const env_name = currentEnvironmentName(app);
-    drawKeyValue(allocator, win, 3, "Env", env_name, theme);
-
-    const shortcuts = "Ctrl+X Quit | Ctrl+R/F5 Run | Ctrl+T/E/H Panels";
-    drawLine(win, 4, shortcuts, theme.muted);
+    drawKeyValue(allocator, win, 2, "Env", env_name, theme);
 }
 
 fn drawLine(win: vaxis.Window, row: u16, text: []const u8, style: vaxis.Style) void {
@@ -38,6 +34,26 @@ fn drawKeyValue(
     theme: theme_mod.Theme,
 ) void {
     const line = std.fmt.allocPrint(allocator, "{s}: {s}", .{ key, value }) catch return;
+    const segments = [_]vaxis.Segment{.{ .text = line, .style = theme.text }};
+    _ = win.print(&segments, .{ .row_offset = row, .wrap = .none });
+}
+
+fn drawKeyPair(
+    allocator: std.mem.Allocator,
+    win: vaxis.Window,
+    row: u16,
+    key_left: []const u8,
+    value_left: []const u8,
+    key_right: []const u8,
+    value_right: []const u8,
+    theme: theme_mod.Theme,
+) void {
+    const line = std.fmt.allocPrint(allocator, "{s}: {s} | {s}: {s}", .{
+        key_left,
+        value_left,
+        key_right,
+        value_right,
+    }) catch return;
     const segments = [_]vaxis.Segment{.{ .text = line, .style = theme.text }};
     _ = win.print(&segments, .{ .row_offset = row, .wrap = .none });
 }

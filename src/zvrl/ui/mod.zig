@@ -14,7 +14,7 @@ pub fn render(
     const width = win.width;
     const height = win.height;
 
-    const status_h: u16 = 5;
+    const status_h: u16 = 6;
     const command_display_h: u16 = 4;
     const total_remaining: u16 = if (height > status_h) height - status_h else 0;
     const remaining = if (total_remaining > command_display_h) total_remaining - command_display_h else 0;
@@ -55,14 +55,38 @@ pub fn render(
     else
         0;
 
-    const status_win = win.child(.{
-        .x_off = 0,
-        .y_off = 0,
-        .width = width,
-        .height = status_h,
-        .border = .{ .where = .all, .style = theme.border },
-    });
-    components.status_bar.render(allocator, status_win, app, theme);
+    var shortcuts_w: u16 = 0;
+    var status_w: u16 = width;
+    if (width > 40) {
+        shortcuts_w = @min(width, history_w);
+        if (shortcuts_w < width) {
+            status_w = width - shortcuts_w;
+        } else {
+            shortcuts_w = 0;
+        }
+    }
+
+    if (status_w > 0) {
+        const status_win = win.child(.{
+            .x_off = 0,
+            .y_off = 0,
+            .width = status_w,
+            .height = status_h,
+            .border = .{ .where = .all, .style = theme.border },
+        });
+        components.status_bar.render(allocator, status_win, app, theme);
+    }
+
+    if (shortcuts_w > 0) {
+        const shortcuts_win = win.child(.{
+            .x_off = status_w,
+            .y_off = 0,
+            .width = shortcuts_w,
+            .height = status_h,
+            .border = .{ .where = .all, .style = theme.border },
+        });
+        components.shortcuts_panel.render(shortcuts_win, theme);
+    }
 
     const env_border = if (app.ui.left_panel != null and app.ui.left_panel.? == .environments) theme.accent else theme.border;
     const env_h: u16 = if (total_remaining > 6) 6 else total_remaining;

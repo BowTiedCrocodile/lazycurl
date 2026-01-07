@@ -1,4 +1,5 @@
 pub const status_bar = @import("status_bar.zig");
+pub const shortcuts_panel = @import("shortcuts_panel.zig");
 pub const templates_panel = @import("templates_panel.zig");
 pub const environment_panel = @import("environment_panel.zig");
 pub const history_panel = @import("history_panel.zig");
