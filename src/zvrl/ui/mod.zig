@@ -24,26 +24,35 @@ pub fn render(
     const output_h: u16 = if (remaining > main_h) remaining - main_h else 0;
 
     const min_url_w: u16 = 20;
+    const min_history_w: u16 = 16;
     var left_w: u16 = @min(width, @max(@as(u16, 28), width / 3));
     var method_w: u16 = 15;
+    var history_w: u16 = @max(min_history_w, width / 8);
 
-    if (width < left_w + method_w + min_url_w) {
-        const needed = left_w + method_w + min_url_w - width;
+    if (width < left_w + method_w + min_url_w + history_w) {
+        const needed = left_w + method_w + min_url_w + history_w - width;
         if (left_w > 16) {
             const shrink = @min(needed, left_w - 16);
             left_w -= shrink;
         }
     }
-    if (width < left_w + method_w + min_url_w) {
-        const needed = left_w + method_w + min_url_w - width;
+    if (width < left_w + method_w + min_url_w + history_w) {
+        const needed = left_w + method_w + min_url_w + history_w - width;
         if (method_w > 10) {
             const shrink = @min(needed, method_w - 10);
             method_w -= shrink;
         }
     }
+    if (width < left_w + method_w + min_url_w + history_w) {
+        const needed = left_w + method_w + min_url_w + history_w - width;
+        if (history_w > min_history_w) {
+            const shrink = @min(needed, history_w - min_history_w);
+            history_w -= shrink;
+        }
+    }
 
-    const url_w: u16 = if (width > left_w + method_w)
-        width - left_w - method_w
+    const url_w: u16 = if (width > left_w + method_w + history_w)
+        width - left_w - method_w - history_w
     else
         0;
 
@@ -83,9 +92,7 @@ pub fn render(
     }
 
     const templates_border = if (app.ui.left_panel != null and app.ui.left_panel.? == .templates) theme.accent else theme.border;
-    const left_remaining: u16 = if (total_remaining > env_h) total_remaining - env_h else 0;
-    const templates_h: u16 = if (left_remaining > 0) @max(@as(u16, 6), (left_remaining * 6) / 10) else 0;
-    const history_h: u16 = if (left_remaining > templates_h) left_remaining - templates_h else 0;
+    const templates_h: u16 = if (total_remaining > env_h) total_remaining - env_h else 0;
     if (left_w > 0 and templates_h > 0) {
         const templates_win = win.child(.{
             .x_off = 0,
@@ -96,13 +103,13 @@ pub fn render(
         });
         components.templates_panel.render(allocator, templates_win, app, theme);
     }
-    if (left_w > 0 and history_h > 0) {
+    if (history_w > 0 and main_h > 0) {
         const history_border = if (app.ui.left_panel != null and app.ui.left_panel.? == .history) theme.accent else theme.border;
         const history_win = win.child(.{
-            .x_off = 0,
-            .y_off = status_h + env_h + templates_h,
-            .width = left_w,
-            .height = history_h,
+            .x_off = left_w + method_w + url_w,
+            .y_off = status_h,
+            .width = history_w,
+            .height = main_h,
             .border = .{ .where = .all, .style = history_border },
         });
         components.history_panel.render(allocator, history_win, app, theme);
