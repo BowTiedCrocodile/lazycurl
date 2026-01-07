@@ -1,33 +1,17 @@
+const std = @import("std");
 const vaxis = @import("vaxis");
 const app_mod = @import("zvrl_app");
 const theme_mod = @import("../theme.zig");
 
-pub fn render(win: vaxis.Window, app: *app_mod.App, theme: theme_mod.Theme) void {
-    drawLine(win, 0, "Shortcuts", theme.title);
-    if (win.height < 2) return;
-    drawLine(win, 1, "Ctrl+X Quit | Ctrl+R/F5 Run", theme.text);
-    if (win.height < 3) return;
-    drawLine(win, 2, "Enter Edit | Tab Cycle", theme.text);
-
-    if (win.height < 4) return;
-    drawLine(win, 3, "Context", theme.title);
-    renderContext(win, app, theme, 4);
+pub fn render(allocator: std.mem.Allocator, win: vaxis.Window, app: *app_mod.App, theme: theme_mod.Theme) void {
+    if (win.height == 0) return;
+    const line = buildShortcutLine(allocator, app) catch return;
+    drawLine(win, 0, line, theme.muted);
 }
 
 fn drawLine(win: vaxis.Window, row: u16, text: []const u8, style: vaxis.Style) void {
     const segments = [_]vaxis.Segment{.{ .text = text, .style = style }};
     _ = win.print(&segments, .{ .row_offset = row, .wrap = .none });
-}
-
-fn renderContext(win: vaxis.Window, app: *app_mod.App, theme: theme_mod.Theme, start_row: u16) void {
-    if (start_row >= win.height) return;
-    const lines = contextLines(app);
-    var row = start_row;
-    for (lines) |line| {
-        if (row >= win.height) break;
-        drawLine(win, row, line, theme.muted);
-        row += 1;
-    }
 }
 
 fn contextLines(app: *app_mod.App) []const []const u8 {
@@ -62,4 +46,33 @@ fn contextLines(app: *app_mod.App) []const []const u8 {
         "Arrows Navigate",
         "Tab Switch",
     };
+}
+
+fn baseLines() []const []const u8 {
+    return &[_][]const u8{
+        "Ctrl+X Quit",
+        "Ctrl+R/F5 Run",
+    };
+}
+
+fn buildShortcutLine(allocator: std.mem.Allocator, app: *app_mod.App) ![]const u8 {
+    const base = baseLines();
+    const context = contextLines(app);
+    const total = base.len + context.len;
+    if (total == 0) return "";
+
+    var joined = try std.ArrayList(u8).initCapacity(allocator, 0);
+    try joined.ensureTotalCapacity(allocator, 64);
+    var idx: usize = 0;
+    for (base) |entry| {
+        if (idx > 0) try joined.appendSlice(allocator, " | ");
+        try joined.appendSlice(allocator, entry);
+        idx += 1;
+    }
+    for (context) |entry| {
+        if (idx > 0) try joined.appendSlice(allocator, " | ");
+        try joined.appendSlice(allocator, entry);
+        idx += 1;
+    }
+    return joined.toOwnedSlice(allocator);
 }

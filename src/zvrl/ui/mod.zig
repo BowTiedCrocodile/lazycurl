@@ -15,8 +15,9 @@ pub fn render(
     const height = win.height;
 
     const status_h: u16 = 6;
+    const shortcuts_h: u16 = 1;
     const command_display_h: u16 = 4;
-    const total_remaining: u16 = if (height > status_h) height - status_h else 0;
+    const total_remaining: u16 = if (height > status_h + shortcuts_h) height - status_h - shortcuts_h else 0;
     const remaining = if (total_remaining > command_display_h) total_remaining - command_display_h else 0;
     const proposed_main: u16 = if (remaining > 0) @max(@as(u16, 5), (remaining * 3) / 10) else 0;
     const main_h: u16 = if (remaining > 0) @min(remaining, proposed_main) else 0;
@@ -55,37 +56,26 @@ pub fn render(
     else
         0;
 
-    var shortcuts_w: u16 = 0;
-    var status_w: u16 = width;
-    if (width > 40) {
-        shortcuts_w = @min(width, history_w);
-        if (shortcuts_w < width) {
-            status_w = width - shortcuts_w;
-        } else {
-            shortcuts_w = 0;
-        }
-    }
-
-    if (status_w > 0) {
+    if (width > 0 and status_h > 0) {
         const status_win = win.child(.{
             .x_off = 0,
             .y_off = 0,
-            .width = status_w,
+            .width = width,
             .height = status_h,
             .border = .{ .where = .all, .style = theme.border },
         });
         components.status_bar.render(allocator, status_win, app, theme);
     }
 
-    if (shortcuts_w > 0) {
+    if (width > 0 and shortcuts_h > 0 and height >= shortcuts_h) {
         const shortcuts_win = win.child(.{
-            .x_off = status_w,
-            .y_off = 0,
-            .width = shortcuts_w,
-            .height = status_h,
-            .border = .{ .where = .all, .style = theme.border },
+            .x_off = 0,
+            .y_off = height - shortcuts_h,
+            .width = width,
+            .height = shortcuts_h,
+            .border = .{ .where = .none },
         });
-        components.shortcuts_panel.render(shortcuts_win, app, theme);
+        components.shortcuts_panel.render(allocator, shortcuts_win, app, theme);
     }
 
     const env_border = if (app.ui.left_panel != null and app.ui.left_panel.? == .environments) theme.accent else theme.border;
