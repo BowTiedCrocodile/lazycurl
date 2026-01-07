@@ -64,12 +64,19 @@ fn drawColumnsHeader(
 ) void {
     if (row >= win.height) return;
     if (columns.url_w == 0 or columns.name_w == 0) return;
-    const line = std.fmt.allocPrint(allocator, "{s} {s} {s}", .{
-        padOrTrim(allocator, "METHOD", columns.method_w),
-        padOrTrim(allocator, "URL", columns.url_w),
-        padOrTrim(allocator, "NAME", columns.name_w),
-    }) catch return;
-    drawLine(win, row, line, theme.muted);
+    const method_label = padOrTrim(allocator, "METHOD", columns.method_w);
+    const url_label = padOrTrim(allocator, "URL", columns.url_w);
+    const name_label = padOrTrim(allocator, "NAME", columns.name_w);
+    const sep = " | ";
+    const segments = [_]vaxis.Segment{
+        .{ .text = "  ", .style = theme.muted },
+        .{ .text = method_label, .style = theme.muted },
+        .{ .text = sep, .style = theme.muted },
+        .{ .text = url_label, .style = theme.muted },
+        .{ .text = sep, .style = theme.muted },
+        .{ .text = name_label, .style = theme.muted },
+    };
+    _ = win.print(segments[0..], .{ .row_offset = row, .wrap = .none });
 }
 
 fn renderTemplateList(
@@ -120,7 +127,7 @@ fn renderTemplateList(
                 const name_label = template.name;
                 const is_editing = app.state == .editing and app.editing_field != null and app.editing_field.? == .template_name and selected;
                 if (is_editing) {
-                    const prefix = std.fmt.allocPrint(allocator, "{s} {s} {s} ", .{
+                    const prefix = std.fmt.allocPrint(allocator, "{s} {s} | {s} | ", .{
                         if (selected) ">" else " ",
                         padOrTrim(allocator, method_label, columns.method_w),
                         padOrTrim(allocator, truncate(allocator, url_label, columns.url_w), columns.url_w),
@@ -138,13 +145,18 @@ fn renderTemplateList(
                         prefix,
                     );
                 } else {
-                    const line = std.fmt.allocPrint(allocator, "{s} {s} {s} {s}", .{
-                        if (selected) ">" else " ",
-                        padOrTrim(allocator, method_label, columns.method_w),
-                        padOrTrim(allocator, truncate(allocator, url_label, columns.url_w), columns.url_w),
-                        truncate(allocator, name_label, columns.name_w),
-                    }) catch return row;
-                    drawLine(win, row, line, style);
+                    drawTemplateRow(
+                        allocator,
+                        win,
+                        row,
+                        columns,
+                        method_label,
+                        url_label,
+                        name_label,
+                        selected,
+                        focus,
+                        theme,
+                    );
                 }
                 row += 1;
                 rendered += 1;
@@ -244,6 +256,50 @@ fn padOrTrim(allocator: std.mem.Allocator, value: []const u8, width: usize) []co
 
 fn methodLabel(method: anytype) []const u8 {
     return method.asString();
+}
+
+fn drawTemplateRow(
+    allocator: std.mem.Allocator,
+    win: vaxis.Window,
+    row: u16,
+    columns: Columns,
+    method_label: []const u8,
+    url_label: []const u8,
+    name_label: []const u8,
+    selected: bool,
+    focused: bool,
+    theme: theme_mod.Theme,
+) void {
+    if (row >= win.height) return;
+    const indicator = if (selected) ">" else " ";
+    const prefix = std.fmt.allocPrint(allocator, "{s} ", .{indicator}) catch return;
+    const method_text = padOrTrim(allocator, method_label, columns.method_w);
+    const url_text = padOrTrim(allocator, truncate(allocator, url_label, columns.url_w), columns.url_w);
+    const name_text = padOrTrim(allocator, truncate(allocator, name_label, columns.name_w), columns.name_w);
+
+    var method_style = theme.accent;
+    var url_style = theme.text;
+    var name_style = theme.text;
+    var prefix_style = theme.text;
+    var sep_style = theme.muted;
+    if (selected and focused) {
+        method_style.reverse = true;
+        url_style.reverse = true;
+        name_style.reverse = true;
+        prefix_style.reverse = true;
+        sep_style.reverse = true;
+    }
+
+    const sep = " | ";
+    const segments = [_]vaxis.Segment{
+        .{ .text = prefix, .style = prefix_style },
+        .{ .text = method_text, .style = method_style },
+        .{ .text = sep, .style = sep_style },
+        .{ .text = url_text, .style = url_style },
+        .{ .text = sep, .style = sep_style },
+        .{ .text = name_text, .style = name_style },
+    };
+    _ = win.print(segments[0..], .{ .row_offset = row, .wrap = .none });
 }
 
 fn drawInputWithCursor(
