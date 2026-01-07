@@ -65,12 +65,10 @@ pub fn main() !void {
         loop.queue.unlock();
 
         try runtime.tick();
-            if (runtime.last_result != null and !runtime.last_result_handled) {
-                if (runtime.last_result.?.exit_code != null and runtime.last_result.?.exit_code.? == 0) {
-                    _ = app.addHistoryFromCurrent(&runtime) catch {};
-                }
-                runtime.last_result_handled = true;
-            }
+        if (runtime.last_result != null and !runtime.last_result_handled) {
+            _ = app.addHistoryFromCurrent(&runtime) catch {};
+            runtime.last_result_handled = true;
+        }
         app.toggleCursor();
         try render(allocator, &vx, tty.writer(), &app, &runtime);
     }
@@ -99,7 +97,10 @@ fn handleEvent(
             if (key.matchShortcut('r', .{ .ctrl = true }) or key.codepoint == vaxis.Key.f5) {
                 const command = try app.executeCommand();
                 defer app.allocator.free(command);
-                _ = runtime.startExecution(command) catch {};
+                _ = app.prepareHistorySnapshot() catch {};
+                runtime.startExecution(command) catch {
+                    app.clearPendingHistorySnapshot();
+                };
             }
 
             if (toKeyInput(key)) |input| {

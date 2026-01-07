@@ -195,6 +195,7 @@ pub const App = struct {
     environments: std.ArrayList(core.models.environment.Environment),
     history: std.ArrayList(core.models.command.CurlCommand),
     history_results: std.ArrayList(?execution.executor.ExecutionResult),
+    pending_history_command: ?core.models.command.CurlCommand = null,
     current_environment_index: usize = 0,
 
     pub fn init(allocator: std.mem.Allocator) !App {
@@ -235,6 +236,9 @@ pub const App = struct {
             }
         }
         self.history_results.deinit(self.allocator);
+        if (self.pending_history_command) |*command| {
+            command.deinit();
+        }
         self.ui.edit_input.deinit();
         self.ui.body_input.deinit();
     }
@@ -416,7 +420,14 @@ pub const App = struct {
     }
 
     pub fn addHistoryFromCurrent(self: *App, runtime: *Runtime) !void {
-        const cloned = try cloneCommand(self.allocator, &self.id_generator, &self.current_command);
+        var entry: core.models.command.CurlCommand = undefined;
+        if (self.pending_history_command) |*pending| {
+            entry = pending.*;
+            self.pending_history_command = null;
+        } else {
+            entry = try cloneCommand(self.allocator, &self.id_generator, &self.current_command);
+        }
+        errdefer entry.deinit();
         const max_history: usize = 100;
         if (self.history.items.len >= max_history) {
             var oldest = self.history.orderedRemove(0);
@@ -428,12 +439,28 @@ pub const App = struct {
                 }
             }
         }
-        try self.history.append(self.allocator, cloned);
+        try self.history.append(self.allocator, entry);
         const stored = if (runtime.last_result) |*result|
             try cloneExecutionResult(self.allocator, result)
         else
             null;
         try self.history_results.append(self.allocator, stored);
+    }
+
+    pub fn prepareHistorySnapshot(self: *App) !void {
+        if (self.pending_history_command) |*command| {
+            command.deinit();
+            self.pending_history_command = null;
+        }
+        const cloned = try cloneCommand(self.allocator, &self.id_generator, &self.current_command);
+        self.pending_history_command = cloned;
+    }
+
+    pub fn clearPendingHistorySnapshot(self: *App) void {
+        if (self.pending_history_command) |*command| {
+            command.deinit();
+            self.pending_history_command = null;
+        }
     }
 
     fn currentEnvironment(self: *App) *const core.models.environment.Environment {

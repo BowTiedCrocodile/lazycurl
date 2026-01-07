@@ -1,7 +1,6 @@
 const std = @import("std");
 const vaxis = @import("vaxis");
 const app_mod = @import("zvrl_app");
-const core = @import("zvrl_core");
 const theme_mod = @import("../theme.zig");
 
 pub fn render(
@@ -57,7 +56,7 @@ fn ensureScroll(scroll: *usize, selection: ?usize, total: usize, view: usize) vo
     if (scroll.* > max_scroll) scroll.* = max_scroll;
 }
 
-fn historyLabel(allocator: std.mem.Allocator, command: core.models.command.CurlCommand) ![]const u8 {
+fn historyLabel(allocator: std.mem.Allocator, command: anytype) ![]const u8 {
     const default_name = "New Command";
     if (command.name.len > 0 and !std.mem.eql(u8, command.name, default_name)) {
         return allocator.dupe(u8, command.name);
@@ -66,7 +65,7 @@ fn historyLabel(allocator: std.mem.Allocator, command: core.models.command.CurlC
     return std.fmt.allocPrint(allocator, "{s} {s}", .{ methodLabel(method), command.url });
 }
 
-fn methodLabel(method: core.models.command.HttpMethod) []const u8 {
+fn methodLabel(method: anytype) []const u8 {
     return switch (method) {
         .get => "GET",
         .post => "POST",
