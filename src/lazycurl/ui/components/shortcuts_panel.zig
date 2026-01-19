@@ -16,6 +16,13 @@ fn drawLine(win: vaxis.Window, row: u16, text: []const u8, style: vaxis.Style) v
 
 fn contextLines(app: *app_mod.App) []const []const u8 {
     if (app.state == .editing) {
+        if (app.editing_field == .body) {
+            return &[_][]const u8{
+                "Ctrl+S/F2 Save",
+                "Enter Newline",
+                "Esc Cancel",
+            };
+        }
         return &[_][]const u8{
             "Enter Save",
             "Esc Cancel",
@@ -47,14 +54,14 @@ fn contextLines(app: *app_mod.App) []const []const u8 {
     }
     return &[_][]const u8{
         "Arrows Navigate",
-        "Tab Switch",
+        "Tab/Shift+Tab Switch",
     };
 }
 
 fn baseLines() []const []const u8 {
     return &[_][]const u8{
-        "F5 Run",
-        "F10 Quit",
+        "Ctrl+R/F5 Run",
+        "Ctrl+X/F10 Quit",
     };
 }
 

@@ -1,5 +1,7 @@
 # lazycurl - Terminal Visual Curl
 
+⚠️ This is pre-alpha and still in progress! ⚠️
+
 lazycurl (Terminal Visual Curl) is a terminal-based UI application that provides a visual interface for building curl commands. Unlike Postman or Insomnia which abstract away the underlying HTTP requests, lazycurl focuses on making curl itself more accessible through visual aids while preserving the power and flexibility of the curl command line tool.
 
 ## Features
@@ -82,7 +84,8 @@ Navigate through the application using the keyboard shortcuts below.
 
 ### Keyboard Shortcuts (Zig)
 
-- `Ctrl+X` Quit
+General
+- `Ctrl+X` or `F10` Quit
 - `Ctrl+R` or `F5` Execute command
 - `Ctrl+T` Toggle Templates panel
 - `Ctrl+E` Toggle Environments panel
@@ -91,9 +94,24 @@ Navigate through the application using the keyboard shortcuts below.
 - Arrow keys Navigate fields and panels
 - `Enter` Edit field / confirm selection
 - `Esc` Cancel editing / close dropdown
-- `F2` or `Ctrl+S` Save body edits
 - `Backspace` / `Delete` Delete character or option
 - `Home` / `End` Move cursor in text inputs
+
+Editing (single-line)
+- `Enter` Save edits
+- `Esc` Cancel edits
+
+Body editor
+- `Enter` Newline
+- `F2` or `Ctrl+S` Save body edits
+- `Esc` Cancel edits
+
+Templates panel (focused)
+- `Enter` Load/Toggle folder
+- `F2` Rename template or folder
+- `F3` Save template from current command
+- `F4` New folder
+- `F6` Delete folder
 
 ### Basic Workflow
 

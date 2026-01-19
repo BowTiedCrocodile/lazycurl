@@ -2,8 +2,6 @@
 
 ## 1. Project Overview
 
-This is pre-alpha and still in progress!
-
 ### 1.1 Purpose
 lazycurl (Terminal Visual Curl) is a terminal-based UI application that provides a visual interface for building curl commands. Unlike Postman or Insomnia which abstract away the underlying HTTP requests, lazycurl focuses on making curl itself more accessible through visual aids while preserving the power and flexibility of the curl command line tool.
 
