@@ -1,11 +1,11 @@
 # Porting Plan
 
 - Step 1 – Source Audit & Feature Freeze
-  Inventory every Rust module (app, command, execution, models, persistence, ui) plus assets like SHORTCUTS.md and tvrl_design_document.md.
+  Inventory every Rust module (app, command, execution, models, persistence, ui) plus assets like SHORTCUTS.md and lazycurl_design_document.md.
   Capture the user-visible feature list (tabs, templates, env vars, command execution) plus shortcuts so they become migration acceptance
   tests. Outcome: markdown checklist describing required behavior in Zig and any Rust-only dependencies to replace.
 - Step 2 – Zig Workspace Foundations
-  Flesh out build.zig/build.zig.zon to pull libvaxis as a dependency, define separate app and core modules (src/zvrl/core/*.zig), and add
+  Flesh out build.zig/build.zig.zon to pull libvaxis as a dependency, define separate app and core modules (src/lazycurl/core/*.zig), and add
   zig build run/test/fmt shortcuts to dev.sh. Verify zig build run still succeeds with placeholder code and document required Zig version +
   libvaxis fetch instructions.
 - Step 3 – Data Model Port
@@ -13,11 +13,11 @@
   RequestBody). Replace uuid usage with std.uuid or deterministic counters, and port chrono timestamps to std.time. Add serialization
   scaffolding (likely std.json). Create unit tests ensuring Zig models default the same way as Rust ones.
 - Step 4 – Command Builder Logic
-  Re‑implement CommandBuilder::build, option quoting, env substitution, and query param handling in Zig (src/zvrl/command/builder.zig).
+  Re‑implement CommandBuilder::build, option quoting, env substitution, and query param handling in Zig (src/lazycurl/command/builder.zig).
   Provide helpers for regex-like substitutions via std.mem.tokenize/std.regex. Port the test cases from builder.rs verbatim to Zig’s test
   blocks to guarantee curl strings stay identical.
 - Step 5 – Persistence & Sample Data
-  Stub out JSON (or TOML) persistence APIs mirroring persistence in Rust so templates/environments can be saved under ~/.config/tvrl/.
+  Stub out JSON (or TOML) persistence APIs mirroring persistence in Rust so templates/environments can be saved under ~/.config/lazycurl/.
   Implement load/save functions returning Zig errors so later UI work can surface failures. Seed demo templates/environments in Zig the same
   way App::new does to keep UX parity until real persistence is wired.
 - Step 6 – Command Execution Backend
@@ -25,7 +25,7 @@
   ExecutionResult. Mirror Rust’s exit-code mapping so UI can show friendly errors. Add async-ish polling using libvaxis’ event loop or a
   custom thread to avoid blocking the TUI.
 - Step 7 – Event System & App State Machine
-  Port App, AppState, UiState, selection enums, and cursor blink timers into Zig (src/zvrl/app.zig). Recreate the key-handling table, tab
+  Port App, AppState, UiState, selection enums, and cursor blink timers into Zig (src/lazycurl/app.zig). Recreate the key-handling table, tab
   navigation, dropdown logic, template loading, and editing modes as pure state transitions independent of any UI library. Add thorough
   tests for functions like navigate_field_up and execute_command using Zig’s testing harness.
 - Step 8 – Libvaxis Terminal Harness

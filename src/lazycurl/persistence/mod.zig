@@ -1,5 +1,5 @@
 const std = @import("std");
-const core = @import("zvrl_core");
+const core = @import("lazycurl_core");
 
 const Allocator = std.mem.Allocator;
 const CurlCommand = core.models.command.CurlCommand;
@@ -30,7 +30,7 @@ pub const PersistenceError = error{
 };
 
 pub fn resolvePaths(allocator: Allocator) !StoragePaths {
-    const base_dir = try std.fs.getAppDataDir(allocator, "tvrl");
+    const base_dir = try std.fs.getAppDataDir(allocator, "lazycurl");
     const templates_dir = try std.fs.path.join(allocator, &.{ base_dir, "templates" });
     const environments_dir = try std.fs.path.join(allocator, &.{ base_dir, "environments" });
     const history_file = try std.fs.path.join(allocator, &.{ base_dir, "history.json" });

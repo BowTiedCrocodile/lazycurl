@@ -10,8 +10,8 @@ pub const AppMetadata = struct {
 
 pub fn defaultMetadata() AppMetadata {
     return .{
-        .name = "TVRL",
-        .description = "Terminal Visual Curl - Zig rewrite bootstrap",
+        .name = "lazycurl",
+        .description = "lazycurl - Terminal Visual Curl",
         .version = "0.1.0-dev",
         .zig_version = "0.15.1",
         .tui_backend = "libvaxis",

@@ -1,6 +1,6 @@
-# TVRL - Terminal Visual Curl
+# lazycurl - Terminal Visual Curl
 
-TVRL (Terminal Visual Curl) is a terminal-based UI application that provides a visual interface for building curl commands. Unlike Postman or Insomnia which abstract away the underlying HTTP requests, TVRL focuses on making curl itself more accessible through visual aids while preserving the power and flexibility of the curl command line tool.
+lazycurl (Terminal Visual Curl) is a terminal-based UI application that provides a visual interface for building curl commands. Unlike Postman or Insomnia which abstract away the underlying HTTP requests, lazycurl focuses on making curl itself more accessible through visual aids while preserving the power and flexibility of the curl command line tool.
 
 ## Features
 
@@ -23,8 +23,8 @@ TVRL (Terminal Visual Curl) is a terminal-based UI application that provides a v
 
 1. Clone the repository:
    ```
-   git clone https://github.com/yourusername/tvrl.git
-   cd tvrl
+   git clone git@github.com:BowTiedCrocodile/lazycurl.git
+   cd lazycurl
    ```
 2. Fetch third-party Zig dependencies (libvaxis main):
    ```
@@ -71,7 +71,7 @@ zig fmt src
 
 ## Usage
 
-TVRL provides a terminal UI for building curl commands. The interface is divided into several panels:
+lazycurl provides a terminal UI for building curl commands. The interface is divided into several panels:
 
 - **Command Builder**: Build your curl command with visual aids
 - **Generated Command**: See the actual curl command in real-time
@@ -106,7 +106,7 @@ Navigate through the application using the keyboard shortcuts below.
 
 ## Architecture
 
-TVRL follows a modular architecture with clear separation between:
+lazycurl follows a modular architecture with clear separation between:
 
 1. **User Interface Layer**: Built with libvaxis in Zig
 2. **Command Builder Layer**: Generates curl commands based on user input

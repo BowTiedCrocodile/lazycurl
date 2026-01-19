@@ -1,7 +1,7 @@
 const std = @import("std");
 const vaxis = @import("vaxis");
-const app_mod = @import("zvrl_app");
-const text_input = @import("zvrl_text_input");
+const app_mod = @import("lazycurl_app");
+const text_input = @import("lazycurl_text_input");
 const theme_mod = @import("../theme.zig");
 const options_panel = @import("options_panel.zig");
 

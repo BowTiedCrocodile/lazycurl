@@ -1,9 +1,11 @@
-# Terminal Visual Curl (TVRL) - Design Document
+# lazycurl - Terminal Visual Curl Design Document
 
 ## 1. Project Overview
 
+This is pre-alpha and still in progress!
+
 ### 1.1 Purpose
-TVRL (Terminal Visual Curl) is a terminal-based UI application that provides a visual interface for building curl commands. Unlike Postman or Insomnia which abstract away the underlying HTTP requests, TVRL focuses on making curl itself more accessible through visual aids while preserving the power and flexibility of the curl command line tool.
+lazycurl (Terminal Visual Curl) is a terminal-based UI application that provides a visual interface for building curl commands. Unlike Postman or Insomnia which abstract away the underlying HTTP requests, lazycurl focuses on making curl itself more accessible through visual aids while preserving the power and flexibility of the curl command line tool.
 
 ### 1.2 Goals
 - Create an intuitive terminal UI for building curl commands visually
@@ -278,7 +280,7 @@ struct EnvironmentVariable {
 
 #### 4.2.1 File Structure
 ```
-~/.config/tvrl/
+~/.config/lazycurl/
 ├── config.toml       # Application configuration
 ├── templates/        # Command templates
 │   ├── api.json
@@ -413,7 +415,7 @@ max_history_items = 100
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│ TVRL - Terminal Visual Curl                                   [Help][⚙] │
+│ lazycurl - Terminal Visual Curl                               [Help][⚙] │
 ├─────────────────┬───────────────────────────────────────────────────────┤
 │                 │ Command Builder                                        │
 │                 │ ┌─────────────────────────────────────────────────────┐│
@@ -703,4 +705,4 @@ fn substitute_env_vars(input: &str, environment: &Environment) -> String {
 
 ## 9. Conclusion
 
-The Terminal Visual Curl (TVRL) application will provide a powerful, terminal-based tool for building and executing curl commands. By focusing on making curl itself more accessible rather than abstracting it away, TVRL maintains the full power and flexibility of curl while adding visual aids to make it more user-friendly. The real-time command preview ensures users always know exactly what curl command they're building, and the ability to save templates and manage environments makes complex API interactions more manageable.
+The Terminal Visual Curl (lazycurl) application will provide a powerful, terminal-based tool for building and executing curl commands. By focusing on making curl itself more accessible rather than abstracting it away, lazycurl maintains the full power and flexibility of curl while adding visual aids to make it more user-friendly. The real-time command preview ensures users always know exactly what curl command they're building, and the ability to save templates and manage environments makes complex API interactions more manageable.

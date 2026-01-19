@@ -2,13 +2,13 @@
 
 ## Modules and Responsibilities (Zig)
 - `src/main.zig`: Vaxis bootstrapper that toggles raw mode/alternate screen, owns the event loop, and drives rendering.
-- `src/zvrl/app.zig`: Master application state machine – tabs, selection logic, cursor blinking, templates/env/history toggles, and command execution triggers.
-- `src/zvrl/command/*`: Curl command builder (`builder.zig`) and env-var substitution helpers.
-- `src/zvrl/execution/*`: Executor wrapping `std.process.Child`, streaming output + error messages.
-- `src/zvrl/core/models/*`: Data definitions for `CurlCommand`, `RequestBody`, headers, query params, templates, and environments (timestamps + IDs).
-- `src/zvrl/persistence/*`: Storage paths and stubbed JSON persistence.
-- `src/zvrl/ui/*`: libvaxis theme, layout, and composable widgets (`components/`).
-- Docs: `docs/tvrl_design_document.md`, `README.md`, `AGENTS.md`, and `dev.sh` (development workflow helper).
+- `src/lazycurl/app.zig`: Master application state machine – tabs, selection logic, cursor blinking, templates/env/history toggles, and command execution triggers.
+- `src/lazycurl/command/*`: Curl command builder (`builder.zig`) and env-var substitution helpers.
+- `src/lazycurl/execution/*`: Executor wrapping `std.process.Child`, streaming output + error messages.
+- `src/lazycurl/core/models/*`: Data definitions for `CurlCommand`, `RequestBody`, headers, query params, templates, and environments (timestamps + IDs).
+- `src/lazycurl/persistence/*`: Storage paths and stubbed JSON persistence.
+- `src/lazycurl/ui/*`: libvaxis theme, layout, and composable widgets (`components/`).
+- Docs: `docs/lazycurl_design_document.md`, `README.md`, `AGENTS.md`, and `dev.sh` (development workflow helper).
 
 ## User-Visible Feature Inventory
 - **Layout**: Status bar (app state, messages), left templates tree, method dropdown, URL editor with tabs (URL/Headers/Body/Curl Options), command preview, and output pane.

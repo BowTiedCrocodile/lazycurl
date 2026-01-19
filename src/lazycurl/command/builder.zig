@@ -1,5 +1,5 @@
 const std = @import("std");
-const core = @import("zvrl_core");
+const core = @import("lazycurl_core");
 
 const Allocator = std.mem.Allocator;
 const CurlCommand = core.models.command.CurlCommand;

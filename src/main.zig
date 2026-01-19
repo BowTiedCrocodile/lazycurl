@@ -1,7 +1,7 @@
 const std = @import("std");
 const vaxis = @import("vaxis");
-const app_mod = @import("zvrl_app");
-const ui = @import("zvrl_ui");
+const app_mod = @import("lazycurl_app");
+const ui = @import("lazycurl_ui");
 
 const Event = vaxis.Event;
 

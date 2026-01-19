@@ -10,85 +10,85 @@ pub fn build(b: *std.Build) void {
     });
     const vaxis_mod = vaxis_dep.module("vaxis");
 
-    const core_mod = b.addModule("zvrl_core", .{
-        .root_source_file = b.path("src/zvrl/core/mod.zig"),
+    const core_mod = b.addModule("lazycurl_core", .{
+        .root_source_file = b.path("src/lazycurl/core/mod.zig"),
         .target = target,
         .optimize = optimize,
     });
 
-    const command_mod = b.addModule("zvrl_command", .{
-        .root_source_file = b.path("src/zvrl/command/mod.zig"),
+    const command_mod = b.addModule("lazycurl_command", .{
+        .root_source_file = b.path("src/lazycurl/command/mod.zig"),
         .target = target,
         .optimize = optimize,
         .imports = &.{
-            .{ .name = "zvrl_core", .module = core_mod },
+            .{ .name = "lazycurl_core", .module = core_mod },
         },
     });
 
-    const execution_mod = b.addModule("zvrl_execution", .{
-        .root_source_file = b.path("src/zvrl/execution/mod.zig"),
+    const execution_mod = b.addModule("lazycurl_execution", .{
+        .root_source_file = b.path("src/lazycurl/execution/mod.zig"),
         .target = target,
         .optimize = optimize,
     });
 
-    const text_input_mod = b.addModule("zvrl_text_input", .{
-        .root_source_file = b.path("src/zvrl/text_input.zig"),
+    const text_input_mod = b.addModule("lazycurl_text_input", .{
+        .root_source_file = b.path("src/lazycurl/text_input.zig"),
         .target = target,
         .optimize = optimize,
     });
 
-    const persistence_mod = b.addModule("zvrl_persistence", .{
-        .root_source_file = b.path("src/zvrl/persistence/mod.zig"),
+    const persistence_mod = b.addModule("lazycurl_persistence", .{
+        .root_source_file = b.path("src/lazycurl/persistence/mod.zig"),
         .target = target,
         .optimize = optimize,
         .imports = &.{
-            .{ .name = "zvrl_core", .module = core_mod },
+            .{ .name = "lazycurl_core", .module = core_mod },
         },
     });
 
-    const app_mod = b.addModule("zvrl_app", .{
-        .root_source_file = b.path("src/zvrl/app.zig"),
+    const app_mod = b.addModule("lazycurl_app", .{
+        .root_source_file = b.path("src/lazycurl/app.zig"),
         .target = target,
         .optimize = optimize,
         .imports = &.{
-            .{ .name = "zvrl_core", .module = core_mod },
-            .{ .name = "zvrl_command", .module = command_mod },
-            .{ .name = "zvrl_execution", .module = execution_mod },
-            .{ .name = "zvrl_persistence", .module = persistence_mod },
-            .{ .name = "zvrl_text_input", .module = text_input_mod },
+            .{ .name = "lazycurl_core", .module = core_mod },
+            .{ .name = "lazycurl_command", .module = command_mod },
+            .{ .name = "lazycurl_execution", .module = execution_mod },
+            .{ .name = "lazycurl_persistence", .module = persistence_mod },
+            .{ .name = "lazycurl_text_input", .module = text_input_mod },
             .{ .name = "vaxis", .module = vaxis_mod },
         },
     });
 
-    const ui_mod = b.addModule("zvrl_ui", .{
-        .root_source_file = b.path("src/zvrl/ui/mod.zig"),
+    const ui_mod = b.addModule("lazycurl_ui", .{
+        .root_source_file = b.path("src/lazycurl/ui/mod.zig"),
         .target = target,
         .optimize = optimize,
         .imports = &.{
-            .{ .name = "zvrl_app", .module = app_mod },
-            .{ .name = "zvrl_text_input", .module = text_input_mod },
+            .{ .name = "lazycurl_app", .module = app_mod },
+            .{ .name = "lazycurl_text_input", .module = text_input_mod },
             .{ .name = "vaxis", .module = vaxis_mod },
         },
     });
 
-    _ = b.addModule("zvrl", .{
+    _ = b.addModule("lazycurl", .{
         .root_source_file = b.path("src/root.zig"),
         .target = target,
         .optimize = optimize,
         .imports = &.{
-            .{ .name = "zvrl_core", .module = core_mod },
+            .{ .name = "lazycurl_core", .module = core_mod },
         },
     });
 
     const exe = b.addExecutable(.{
-        .name = "zvrl",
+        .name = "lazycurl",
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/main.zig"),
             .target = target,
             .optimize = optimize,
             .imports = &.{
-                .{ .name = "zvrl_app", .module = app_mod },
-                .{ .name = "zvrl_ui", .module = ui_mod },
+                .{ .name = "lazycurl_app", .module = app_mod },
+                .{ .name = "lazycurl_ui", .module = ui_mod },
                 .{ .name = "vaxis", .module = vaxis_mod },
             },
         }),
@@ -97,12 +97,12 @@ pub fn build(b: *std.Build) void {
     b.installArtifact(exe);
 
     const run_cmd = b.addRunArtifact(exe);
-    const run_step = b.step("run", "Run the zvrl application");
+    const run_step = b.step("run", "Run the lazycurl application");
     run_step.dependOn(&run_cmd.step);
 
     const core_tests = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/zvrl/core/mod.zig"),
+            .root_source_file = b.path("src/lazycurl/core/mod.zig"),
             .target = target,
             .optimize = optimize,
         }),
@@ -114,22 +114,22 @@ pub fn build(b: *std.Build) void {
             .target = target,
             .optimize = optimize,
             .imports = &.{
-                .{ .name = "zvrl_core", .module = core_mod },
+                .{ .name = "lazycurl_core", .module = core_mod },
             },
         }),
     });
 
     const app_tests = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/zvrl/app.zig"),
+            .root_source_file = b.path("src/lazycurl/app.zig"),
             .target = target,
             .optimize = optimize,
             .imports = &.{
-                .{ .name = "zvrl_core", .module = core_mod },
-                .{ .name = "zvrl_command", .module = command_mod },
-                .{ .name = "zvrl_execution", .module = execution_mod },
-                .{ .name = "zvrl_persistence", .module = persistence_mod },
-                .{ .name = "zvrl_text_input", .module = text_input_mod },
+                .{ .name = "lazycurl_core", .module = core_mod },
+                .{ .name = "lazycurl_command", .module = command_mod },
+                .{ .name = "lazycurl_execution", .module = execution_mod },
+                .{ .name = "lazycurl_persistence", .module = persistence_mod },
+                .{ .name = "lazycurl_text_input", .module = text_input_mod },
                 .{ .name = "vaxis", .module = vaxis_mod },
             },
         }),
@@ -137,29 +137,29 @@ pub fn build(b: *std.Build) void {
 
     const command_tests = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/zvrl/command/builder.zig"),
+            .root_source_file = b.path("src/lazycurl/command/builder.zig"),
             .target = target,
             .optimize = optimize,
             .imports = &.{
-                .{ .name = "zvrl_core", .module = core_mod },
+                .{ .name = "lazycurl_core", .module = core_mod },
             },
         }),
     });
 
     const persistence_tests = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/zvrl/persistence/mod.zig"),
+            .root_source_file = b.path("src/lazycurl/persistence/mod.zig"),
             .target = target,
             .optimize = optimize,
             .imports = &.{
-                .{ .name = "zvrl_core", .module = core_mod },
+                .{ .name = "lazycurl_core", .module = core_mod },
             },
         }),
     });
 
     const execution_tests = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/zvrl/execution/executor.zig"),
+            .root_source_file = b.path("src/lazycurl/execution/executor.zig"),
             .target = target,
             .optimize = optimize,
         }),

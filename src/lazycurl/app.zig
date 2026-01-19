@@ -1,10 +1,10 @@
 const std = @import("std");
-const core = @import("zvrl_core");
+const core = @import("lazycurl_core");
 const vaxis = @import("vaxis");
-const execution = @import("zvrl_execution");
-const persistence = @import("zvrl_persistence");
-const command_builder = @import("zvrl_command");
-const text_input = @import("zvrl_text_input");
+const execution = @import("lazycurl_execution");
+const persistence = @import("lazycurl_persistence");
+const command_builder = @import("lazycurl_command");
+const text_input = @import("lazycurl_text_input");
 
 pub const Runtime = struct {
     allocator: std.mem.Allocator,
@@ -1428,7 +1428,7 @@ pub fn run(allocator: std.mem.Allocator) !void {
 
     var stdout = std.fs.File.stdout().deprecatedWriter();
     try stdout.print(
-        "TVRL Zig workspace initialized.\n{s}\n",
+        "lazycurl Zig workspace initialized.\n{s}\n",
         .{summary},
     );
 

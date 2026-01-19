@@ -1,6 +1,6 @@
 const std = @import("std");
 const vaxis = @import("vaxis");
-const app_mod = @import("zvrl_app");
+const app_mod = @import("lazycurl_app");
 const theme_mod = @import("../theme.zig");
 
 pub fn render(
