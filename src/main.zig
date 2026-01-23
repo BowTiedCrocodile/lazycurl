@@ -99,6 +99,7 @@ fn handleEvent(
                 const command = try app.executeCommand();
                 defer app.allocator.free(command);
                 _ = app.prepareHistorySnapshot() catch {};
+                app.resetOutputScroll();
                 runtime.startExecution(command) catch {
                     app.clearPendingHistorySnapshot();
                 };
@@ -108,6 +109,31 @@ fn handleEvent(
                 const should_exit = try app.handleKey(input, runtime);
                 if (should_exit) {
                 running.* = false;
+                }
+            }
+        },
+        .mouse => |mouse| {
+            if (app.ui.output_rect) |rect| {
+                if (rect.contains(mouse.col, mouse.row)) {
+                    switch (mouse.button) {
+                        .wheel_up => app.scrollOutputLines(-3),
+                        .wheel_down => app.scrollOutputLines(3),
+                        .left => {
+                            if (mouse.type == .press) {
+                                if (app.ui.output_copy_rect) |copy_rect| {
+                                    if (copy_rect.contains(mouse.col, mouse.row)) {
+                                        const body = runtime.outputBody();
+                                        const fallback = runtime.outputError();
+                                        const payload = if (body.len > 0) body else fallback;
+                                        if (payload.len > 0) {
+                                            vx.copyToSystemClipboard(tty, payload, allocator) catch {};
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        else => {},
+                    }
                 }
             }
         },
@@ -145,6 +171,10 @@ fn toKeyInput(key: vaxis.Key) ?app_mod.KeyInput {
     if (key.codepoint == vaxis.Key.delete) return .{ .code = .delete, .mods = modsFromKey(key) };
     if (key.codepoint == vaxis.Key.home) return .{ .code = .home, .mods = modsFromKey(key) };
     if (key.codepoint == vaxis.Key.end) return .{ .code = .end, .mods = modsFromKey(key) };
+    if (key.codepoint == vaxis.Key.page_up or key.codepoint == vaxis.Key.kp_page_up)
+        return .{ .code = .page_up, .mods = modsFromKey(key) };
+    if (key.codepoint == vaxis.Key.page_down or key.codepoint == vaxis.Key.kp_page_down)
+        return .{ .code = .page_down, .mods = modsFromKey(key) };
     if (key.codepoint == vaxis.Key.f2) return .{ .code = .f2, .mods = modsFromKey(key) };
     if (key.codepoint == vaxis.Key.f3) return .{ .code = .f3, .mods = modsFromKey(key) };
     if (key.codepoint == vaxis.Key.f4) return .{ .code = .f4, .mods = modsFromKey(key) };

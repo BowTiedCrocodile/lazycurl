@@ -67,6 +67,18 @@ pub const Runtime = struct {
         self.last_result_handled = true;
     }
 
+    pub fn outputBody(self: *Runtime) []const u8 {
+        if (self.active_job != null) return self.stream_stdout.items;
+        if (self.last_result) |result| return result.stdout;
+        return "";
+    }
+
+    pub fn outputError(self: *Runtime) []const u8 {
+        if (self.active_job != null) return self.stream_stderr.items;
+        if (self.last_result) |result| return result.stderr;
+        return "";
+    }
+
     fn clearStreamBuffers(self: *Runtime) void {
         self.stream_stdout.clearRetainingCapacity();
         self.stream_stderr.clearRetainingCapacity();
@@ -153,6 +165,12 @@ pub const UiState = struct {
     templates_scroll: usize = 0,
     environments_scroll: usize = 0,
     history_scroll: usize = 0,
+    output_scroll: usize = 0,
+    output_total_lines: usize = 0,
+    output_view_height: u16 = 0,
+    output_follow: bool = true,
+    output_rect: ?PanelRect = null,
+    output_copy_rect: ?PanelRect = null,
 };
 
 pub const LeftPanel = enum {
@@ -173,6 +191,22 @@ pub const TemplateRow = struct {
     collapsed: bool = false,
 };
 
+pub const PanelRect = struct {
+    x: i17,
+    y: i17,
+    width: u16,
+    height: u16,
+
+    pub fn contains(self: PanelRect, col: i16, row: i16) bool {
+        if (col < 0 or row < 0) return false;
+        const c: i17 = @intCast(col);
+        const r: i17 = @intCast(row);
+        const right: i17 = self.x + @as(i17, @intCast(self.width));
+        const bottom: i17 = self.y + @as(i17, @intCast(self.height));
+        return c >= self.x and c < right and r >= self.y and r < bottom;
+    }
+};
+
 pub const KeyCode = union(enum) {
     tab,
     back_tab,
@@ -186,6 +220,8 @@ pub const KeyCode = union(enum) {
     delete,
     home,
     end,
+    page_up,
+    page_down,
     f2,
     f3,
     f4,
@@ -363,6 +399,22 @@ pub const App = struct {
             },
             .back_tab => {
                 self.prevTab();
+                return false;
+            },
+            .page_up => {
+                self.scrollOutputPage(-1);
+                return false;
+            },
+            .page_down => {
+                self.scrollOutputPage(1);
+                return false;
+            },
+            .home => {
+                self.scrollOutputToStart();
+                return false;
+            },
+            .end => {
+                self.scrollOutputToEnd();
                 return false;
             },
             .up => {
@@ -868,6 +920,59 @@ pub const App = struct {
         if (self.ui.cursor_blink_counter == 0) {
             self.ui.cursor_visible = !self.ui.cursor_visible;
         }
+    }
+
+    pub fn updateOutputMetrics(self: *App, total_lines: usize, view_height: u16) void {
+        self.ui.output_total_lines = total_lines;
+        self.ui.output_view_height = view_height;
+        const max_scroll = self.outputMaxScroll();
+        if (self.ui.output_follow) {
+            self.ui.output_scroll = max_scroll;
+        } else if (self.ui.output_scroll > max_scroll) {
+            self.ui.output_scroll = max_scroll;
+        }
+        self.ui.output_follow = self.ui.output_scroll == max_scroll;
+    }
+
+    pub fn resetOutputScroll(self: *App) void {
+        self.ui.output_scroll = 0;
+        self.ui.output_follow = true;
+    }
+
+    pub fn scrollOutputLines(self: *App, delta: i32) void {
+        const max_scroll = self.outputMaxScroll();
+        var next: i64 = @intCast(self.ui.output_scroll);
+        next += delta;
+        if (next < 0) next = 0;
+        if (next > @as(i64, @intCast(max_scroll))) next = @intCast(max_scroll);
+        self.ui.output_scroll = @intCast(next);
+        self.ui.output_follow = self.ui.output_scroll == max_scroll;
+    }
+
+    pub fn scrollOutputPage(self: *App, direction: i32) void {
+        const view = if (self.ui.output_view_height > 1) self.ui.output_view_height - 1 else 1;
+        const delta: i32 = direction * @as(i32, @intCast(view));
+        self.scrollOutputLines(delta);
+    }
+
+    pub fn scrollOutputToStart(self: *App) void {
+        self.ui.output_scroll = 0;
+        self.ui.output_follow = false;
+    }
+
+    pub fn scrollOutputToEnd(self: *App) void {
+        const max_scroll = self.outputMaxScroll();
+        self.ui.output_scroll = max_scroll;
+        self.ui.output_follow = true;
+    }
+
+    fn outputMaxScroll(self: *App) usize {
+        const view: usize = self.ui.output_view_height;
+        if (view == 0) return 0;
+        return if (self.ui.output_total_lines > view)
+            self.ui.output_total_lines - view
+        else
+            0;
     }
 
     fn handleSingleLineEditingKey(self: *App, input: KeyInput) !bool {

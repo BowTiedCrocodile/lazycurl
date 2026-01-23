@@ -62,6 +62,7 @@ fn baseLines() []const []const u8 {
     return &[_][]const u8{
         "Ctrl+R/F5 Run",
         "Ctrl+X/F10 Quit",
+        "PgUp/PgDn Scroll Output",
     };
 }
 

@@ -6,10 +6,19 @@ const theme_mod = @import("../theme.zig");
 pub fn render(
     allocator: std.mem.Allocator,
     win: vaxis.Window,
+    app: *app_mod.App,
     runtime: *app_mod.Runtime,
     theme: theme_mod.Theme,
 ) void {
-    drawLine(win, 0, "Output", theme.title);
+    app.ui.output_rect = .{
+        .x = win.x_off,
+        .y = win.y_off,
+        .width = win.width,
+        .height = win.height,
+    };
+    app.ui.output_copy_rect = null;
+
+    drawHeader(win, runtime, theme, app);
 
     const status_line = if (runtime.active_job != null)
         "Status: running"
@@ -37,16 +46,23 @@ pub fn render(
         row += 1;
     }
 
-    if (row < win.height) {
-        drawLine(win, row, "Stdout:", theme.muted);
-        row += 1;
-        row = drawOutputLines(win, row, runtimeOutput(runtime, .stdout), theme.text);
-    }
+    const body_start = row;
+    const body_height: u16 = if (win.height > body_start) win.height - body_start else 0;
+    const stdout_text = runtimeOutput(runtime, .stdout);
+    const stderr_text = runtimeOutput(runtime, .stderr);
+    const total_lines = countLines(stdout_text) + countLines(stderr_text) + 2;
+    app.updateOutputMetrics(total_lines, body_height);
 
-    if (row < win.height) {
-        drawLine(win, row, "Stderr:", theme.muted);
-        row += 1;
-        _ = drawOutputLines(win, row, runtimeOutput(runtime, .stderr), theme.error_style);
+    if (body_height > 0) {
+        _ = drawOutputBody(
+            win,
+            body_start,
+            body_height,
+            stdout_text,
+            stderr_text,
+            app.ui.output_scroll,
+            theme,
+        );
     }
 }
 
@@ -68,12 +84,86 @@ fn runtimeOutput(runtime: *app_mod.Runtime, kind: OutputKind) []const u8 {
     return "";
 }
 
-fn drawOutputLines(win: vaxis.Window, start_row: u16, text: []const u8, style: vaxis.Style) u16 {
+const copy_label = "[Copy]";
+
+fn drawHeader(win: vaxis.Window, runtime: *app_mod.Runtime, theme: theme_mod.Theme, app: *app_mod.App) void {
+    drawLine(win, 0, "Output", theme.title);
+    const col = copyLabelCol(win.width) orelse return;
+    const has_output = runtime.outputBody().len > 0 or runtime.outputError().len > 0;
+    const style = if (has_output) theme.accent else theme.muted;
+    const segment = vaxis.Segment{ .text = copy_label, .style = style };
+    _ = win.print(&.{segment}, .{ .row_offset = 0, .col_offset = col, .wrap = .none });
+    app.ui.output_copy_rect = .{
+        .x = win.x_off + @as(i17, @intCast(col)),
+        .y = win.y_off,
+        .width = @intCast(copy_label.len),
+        .height = 1,
+    };
+}
+
+fn copyLabelCol(width: u16) ?u16 {
+    const needed: u16 = @intCast(copy_label.len + 1);
+    if (width <= needed) return null;
+    return width - needed;
+}
+
+fn countLines(text: []const u8) usize {
+    if (text.len == 0) return 0;
+    var count: usize = 1;
+    for (text) |byte| {
+        if (byte == '\n') count += 1;
+    }
+    return count;
+}
+
+fn drawOutputBody(
+    win: vaxis.Window,
+    start_row: u16,
+    height: u16,
+    stdout_text: []const u8,
+    stderr_text: []const u8,
+    scroll: usize,
+    theme: theme_mod.Theme,
+) u16 {
     var row = start_row;
+    var skip = scroll;
+    const max_row = start_row + height;
+
+    row = drawSection(win, row, max_row, "Stdout:", theme.muted, stdout_text, theme.text, &skip);
+    if (row < max_row) {
+        row = drawSection(win, row, max_row, "Stderr:", theme.muted, stderr_text, theme.error_style, &skip);
+    }
+    return row;
+}
+
+fn drawSection(
+    win: vaxis.Window,
+    start_row: u16,
+    max_row: u16,
+    label: []const u8,
+    label_style: vaxis.Style,
+    text: []const u8,
+    text_style: vaxis.Style,
+    skip: *usize,
+) u16 {
+    var row = start_row;
+    if (row >= max_row) return row;
+
+    if (skip.* == 0) {
+        drawLine(win, row, label, label_style);
+        row += 1;
+    } else {
+        skip.* -= 1;
+    }
+
     var it = std.mem.splitScalar(u8, text, '\n');
     while (it.next()) |line| {
-        if (row >= win.height) break;
-        drawLine(win, row, line, style);
+        if (row >= max_row) break;
+        if (skip.* > 0) {
+            skip.* -= 1;
+            continue;
+        }
+        drawLine(win, row, line, text_style);
         row += 1;
     }
     return row;

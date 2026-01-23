@@ -179,6 +179,10 @@ pub fn render(
             .height = output_h,
             .border = .{ .where = .all, .style = theme.border },
         });
-        components.output_panel.render(allocator, output_win, runtime, theme);
+        components.output_panel.render(allocator, output_win, app, runtime, theme);
+    } else {
+        app.ui.output_rect = null;
+        app.ui.output_copy_rect = null;
+        app.updateOutputMetrics(0, 0);
     }
 }
