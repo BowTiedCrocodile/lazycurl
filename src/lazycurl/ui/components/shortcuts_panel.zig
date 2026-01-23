@@ -5,6 +5,21 @@ const theme_mod = @import("../theme.zig");
 
 pub fn render(allocator: std.mem.Allocator, win: vaxis.Window, app: *app_mod.App, theme: theme_mod.Theme) void {
     if (win.height == 0) return;
+    if (isBodyEditing(app)) {
+        const left = buildBaseLine(allocator) catch return;
+        const right = buildBodyLine(allocator, app) catch return;
+        const left_len: u16 = @intCast(left.len);
+        const right_len: u16 = @intCast(right.len);
+        if (right_len > 0 and win.width > right_len and win.width > left_len) {
+            const right_col: u16 = win.width - right_len;
+            if (right_col > left_len + 1) {
+                drawLine(win, 0, left, theme.muted);
+                const segment = vaxis.Segment{ .text = right, .style = theme.muted };
+                _ = win.print(&.{segment}, .{ .row_offset = 0, .col_offset = right_col, .wrap = .none });
+                return;
+            }
+        }
+    }
     const line = buildShortcutLine(allocator, app) catch return;
     drawLine(win, 0, line, theme.muted);
 }
@@ -77,6 +92,15 @@ fn baseLines() []const []const u8 {
     };
 }
 
+fn buildBaseLine(allocator: std.mem.Allocator) ![]const u8 {
+    return joinLines(allocator, baseLines());
+}
+
+fn buildBodyLine(allocator: std.mem.Allocator, app: *app_mod.App) ![]const u8 {
+    const context = contextLines(app);
+    return joinLines(allocator, context);
+}
+
 fn buildShortcutLine(allocator: std.mem.Allocator, app: *app_mod.App) ![]const u8 {
     const base = baseLines();
     const context = contextLines(app);
@@ -97,4 +121,21 @@ fn buildShortcutLine(allocator: std.mem.Allocator, app: *app_mod.App) ![]const u
         idx += 1;
     }
     return joined.toOwnedSlice(allocator);
+}
+
+fn joinLines(allocator: std.mem.Allocator, lines: []const []const u8) ![]const u8 {
+    if (lines.len == 0) return "";
+    var joined = try std.ArrayList(u8).initCapacity(allocator, 0);
+    try joined.ensureTotalCapacity(allocator, 64);
+    var idx: usize = 0;
+    for (lines) |entry| {
+        if (idx > 0) try joined.appendSlice(allocator, " | ");
+        try joined.appendSlice(allocator, entry);
+        idx += 1;
+    }
+    return joined.toOwnedSlice(allocator);
+}
+
+fn isBodyEditing(app: *app_mod.App) bool {
+    return app.state == .editing and app.editing_field != null and app.editing_field.? == .body;
 }
