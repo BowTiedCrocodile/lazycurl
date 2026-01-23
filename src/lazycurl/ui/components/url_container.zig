@@ -580,6 +580,7 @@ fn renderBodyInput(
         start_line = cursor.row - max_lines + 1;
     }
     var line_index: usize = 0;
+    var rendered_any = false;
     var it = std.mem.splitScalar(u8, text, '\n');
     while (it.next()) |line| {
         if (row >= win.height) break;
@@ -587,6 +588,7 @@ fn renderBodyInput(
             line_index += 1;
             continue;
         }
+        rendered_any = true;
         if (line_index == cursor.row) {
             const view = visibleSlice(line, cursor.col, win.width);
             if (is_json) {
@@ -610,7 +612,7 @@ fn renderBodyInput(
         row += 1;
         line_index += 1;
     }
-    if (text.len == 0 and row < win.height) {
+    if (!rendered_any and row < win.height) {
         const view = visibleSlice("", 0, win.width);
         if (is_json) {
             drawJsonLine(win, row, view.slice, style, theme);
