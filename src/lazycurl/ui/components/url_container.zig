@@ -50,13 +50,16 @@ pub fn render(
     }
 
     if (content_h > 0) {
-        const content_border = if (isContentSelected(app)) theme.accent else theme.border;
+        const content_selected = isContentSelected(app);
         const content_win = win.child(.{
             .x_off = 0,
             .y_off = url_h + tabs_h,
             .width = width,
             .height = content_h,
-            .border = .{ .where = .all, .style = content_border },
+            .border = if (app.ui.active_tab == .body)
+                .{ .where = .none }
+            else
+                .{ .where = .all, .style = if (content_selected) theme.accent else theme.border },
         });
         renderTabContent(allocator, content_win, app, theme);
     }
@@ -204,42 +207,67 @@ fn renderBody(
     app: *app_mod.App,
     theme: theme_mod.Theme,
 ) void {
-    drawLine(win, 0, "Body", theme.title);
-
-    const selected_type = isBodyTypeSelected(app);
-    var type_style = if (selected_type) theme.accent else theme.text;
-    if (selected_type) type_style.reverse = true;
-
     const body_type = bodyTypeLabel(app);
-    const type_line = std.fmt.allocPrint(allocator, "Type: {s}", .{body_type}) catch return;
-    drawLine(win, 1, type_line, type_style);
+    const selected_type = isBodyTypeSelected(app);
+    const type_style = if (selected_type) theme.accent else theme.muted;
+    const border_selected = isContentSelected(app);
+    const border_style = if (border_selected) theme.accent else theme.border;
+    const border_win = win.child(.{
+        .x_off = 0,
+        .y_off = 0,
+        .width = win.width,
+        .height = win.height,
+        .border = .{ .where = .all, .style = border_style },
+    });
+    drawBorderTitle(border_win, "Body", theme.title, body_type, type_style, border_style);
 
     const content_selected = isBodyContentSelected(app);
-    var content_style = if (content_selected) theme.accent else theme.text;
-    if (content_selected) content_style.reverse = true;
+    const content_style = if (content_selected) theme.accent else theme.text;
+
+    const is_json = isJsonBody(app);
+
+    if (border_win.height <= 2 or border_win.width <= 2) return;
+    const editor_inner = border_win.child(.{
+        .x_off = 1,
+        .y_off = 1,
+        .width = border_win.width - 2,
+        .height = border_win.height - 2,
+        .border = .{ .where = .none },
+    });
+    const start_row: u16 = 0;
 
     const is_editing = app.state == .editing and app.editing_field != null and app.editing_field.? == .body;
     if (is_editing) {
-        renderBodyInput(win, 3, &app.ui.body_input, content_style, theme.accent, theme.muted, app.ui.cursor_visible);
+        renderBodyInput(
+            editor_inner,
+            start_row,
+            &app.ui.body_input,
+            content_style,
+            theme,
+            app.ui.cursor_visible,
+            is_json,
+            app.ui.body_mode,
+        );
         return;
     }
+    editor_inner.hideCursor();
 
     switch (app.current_command.body orelse .none) {
-        .none => drawLine(win, 3, "No body", theme.muted),
-        .raw => |payload| renderBodyLines(win, 3, payload, content_style, theme.accent, theme.muted),
+        .none => drawLine(editor_inner, start_row, "No body", theme.muted),
+        .raw => |payload| renderBodyLines(editor_inner, start_row, payload, content_style, theme, is_json),
         .form_data => |list| {
-            var row: u16 = 3;
+            var row: u16 = start_row;
             for (list.items) |item| {
-                if (row >= win.height) break;
+                if (row >= editor_inner.height) break;
                 const enabled = if (item.enabled) "[x]" else "[ ]";
                 const line = std.fmt.allocPrint(allocator, "{s} {s}={s}", .{ enabled, item.key, item.value }) catch return;
-                drawLine(win, row, line, content_style);
+                drawLine(editor_inner, row, line, content_style);
                 row += 1;
             }
         },
         .binary => |payload| {
             const line = std.fmt.allocPrint(allocator, "Binary data: {d} bytes", .{payload.len}) catch return;
-            drawLine(win, 3, line, content_style);
+            drawLine(editor_inner, start_row, line, content_style);
         },
     }
 }
@@ -249,11 +277,11 @@ fn renderBodyLines(
     start_row: u16,
     payload: []const u8,
     style: vaxis.Style,
-    highlight_style: vaxis.Style,
-    empty_style: vaxis.Style,
+    theme: theme_mod.Theme,
+    is_json: bool,
 ) void {
     if (payload.len == 0) {
-        drawLine(win, start_row, "Empty body", empty_style);
+        drawLine(win, start_row, "Empty body", theme.muted);
         return;
     }
 
@@ -261,8 +289,11 @@ fn renderBodyLines(
     var it = std.mem.splitScalar(u8, payload, '\n');
     while (it.next()) |line| {
         if (row >= win.height) break;
-        const line_style = if (isHighlightLine(line)) highlight_style else style;
-        drawLine(win, row, line, line_style);
+        if (is_json) {
+            drawJsonLine(win, row, line, style, theme);
+        } else {
+            drawLineClipped(win, row, line, style);
+        }
         row += 1;
     }
 }
@@ -314,6 +345,76 @@ fn drawLine(win: vaxis.Window, row: u16, text: []const u8, style: vaxis.Style) v
     _ = win.print(&segments, .{ .row_offset = row, .wrap = .none });
 }
 
+fn drawLineClipped(win: vaxis.Window, row: u16, text: []const u8, style: vaxis.Style) void {
+    if (row >= win.height or win.width == 0) return;
+    const limit: usize = @intCast(win.width);
+    const slice = if (text.len > limit) text[0..limit] else text;
+    drawLine(win, row, slice, style);
+}
+
+fn drawBorderTitle(
+    win: vaxis.Window,
+    title: []const u8,
+    title_style: vaxis.Style,
+    type_label: []const u8,
+    type_style: vaxis.Style,
+    border_style: vaxis.Style,
+) void {
+    if (win.width < 4) return;
+    if (title.len > 0) {
+        const segments = [_]vaxis.Segment{
+            .{ .text = " ", .style = border_style },
+            .{ .text = title, .style = title_style },
+            .{ .text = " ", .style = border_style },
+        };
+        _ = win.print(segments[0..], .{ .row_offset = 0, .col_offset = 1, .wrap = .none });
+    }
+
+    if (type_label.len > 0) {
+        const w_usize: usize = win.width;
+        if (type_label.len + 2 < w_usize) {
+            const start_col = w_usize - type_label.len - 3;
+            const title_end = 1 + title.len + 2;
+            if (start_col > title_end) {
+                const segments = [_]vaxis.Segment{
+                    .{ .text = " ", .style = border_style },
+                    .{ .text = type_label, .style = type_style },
+                    .{ .text = " ", .style = border_style },
+                };
+                _ = win.print(segments[0..], .{ .row_offset = 0, .col_offset = @intCast(start_col), .wrap = .none });
+            }
+        }
+    }
+}
+
+const VisibleSlice = struct {
+    slice: []const u8,
+    cursor_pos: u16,
+};
+
+fn visibleSlice(line: []const u8, cursor_col: usize, width: u16) VisibleSlice {
+    if (width == 0) return .{ .slice = "", .cursor_pos = 0 };
+    const win_width: usize = width;
+    const safe_cursor = @min(cursor_col, line.len);
+    var start: usize = 0;
+    if (safe_cursor >= win_width) {
+        start = safe_cursor - win_width + 1;
+    }
+    const end = @min(line.len, start + win_width);
+    const visible = line[start..end];
+    const cursor_pos: u16 = @intCast(safe_cursor - start);
+    return .{ .slice = visible, .cursor_pos = cursor_pos };
+}
+
+fn drawJsonLine(win: vaxis.Window, row: u16, text: []const u8, base_style: vaxis.Style, theme: theme_mod.Theme) void {
+    if (row >= win.height or win.width == 0) return;
+    const limit: usize = @intCast(win.width);
+    const slice = if (text.len > limit) text[0..limit] else text;
+    if (!renderJsonSegments(win, row, slice, base_style, theme)) {
+        drawLineClipped(win, row, slice, base_style);
+    }
+}
+
 fn drawInputWithCursorPrefix(
     win: vaxis.Window,
     row: u16,
@@ -356,16 +457,118 @@ fn drawInputWithCursorPrefix(
     _ = win.print(segments[0..], .{ .row_offset = row, .wrap = .none });
 }
 
+fn renderJsonSegments(
+    win: vaxis.Window,
+    row: u16,
+    text: []const u8,
+    base_style: vaxis.Style,
+    theme: theme_mod.Theme,
+) bool {
+    var segments: [64]vaxis.Segment = undefined;
+    var count: usize = 0;
+    const string_style = theme.accent;
+    const number_style = theme.success;
+    const bool_style = theme.muted;
+    const punct_style = theme.muted;
+
+    var i: usize = 0;
+    while (i < text.len) {
+        if (count >= segments.len) return false;
+        const ch = text[i];
+        if (ch == '"') {
+            const start = i;
+            i += 1;
+            while (i < text.len) : (i += 1) {
+                if (text[i] == '\\') {
+                    if (i + 1 < text.len) i += 1;
+                    continue;
+                }
+                if (text[i] == '"') {
+                    i += 1;
+                    break;
+                }
+            }
+            segments[count] = .{ .text = text[start..i], .style = string_style };
+            count += 1;
+            continue;
+        }
+        if (isNumberStart(text, i)) {
+            const start = i;
+            i += 1;
+            while (i < text.len and std.ascii.isDigit(text[i])) : (i += 1) {}
+            if (i < text.len and text[i] == '.') {
+                i += 1;
+                while (i < text.len and std.ascii.isDigit(text[i])) : (i += 1) {}
+            }
+            if (i < text.len and (text[i] == 'e' or text[i] == 'E')) {
+                i += 1;
+                if (i < text.len and (text[i] == '+' or text[i] == '-')) i += 1;
+                while (i < text.len and std.ascii.isDigit(text[i])) : (i += 1) {}
+            }
+            segments[count] = .{ .text = text[start..i], .style = number_style };
+            count += 1;
+            continue;
+        }
+        if (std.ascii.isAlphabetic(ch)) {
+            const start = i;
+            i += 1;
+            while (i < text.len and std.ascii.isAlphabetic(text[i])) : (i += 1) {}
+            const word = text[start..i];
+            const style = if (isJsonKeyword(word)) bool_style else base_style;
+            segments[count] = .{ .text = word, .style = style };
+            count += 1;
+            continue;
+        }
+        if (isJsonPunct(ch)) {
+            segments[count] = .{ .text = text[i .. i + 1], .style = punct_style };
+            count += 1;
+            i += 1;
+            continue;
+        }
+        const start = i;
+        i += 1;
+        while (i < text.len and !isJsonSpecial(text[i])) : (i += 1) {}
+        segments[count] = .{ .text = text[start..i], .style = base_style };
+        count += 1;
+    }
+
+    if (count == 0) return false;
+    _ = win.print(segments[0..count], .{ .row_offset = row, .wrap = .none });
+    return true;
+}
+
+fn isJsonSpecial(ch: u8) bool {
+    return ch == '"' or isJsonPunct(ch) or std.ascii.isAlphabetic(ch) or std.ascii.isDigit(ch) or ch == '-' or ch == '.';
+}
+
+fn isNumberStart(text: []const u8, idx: usize) bool {
+    const ch = text[idx];
+    if (std.ascii.isDigit(ch)) return true;
+    if (ch == '-' and idx + 1 < text.len) return std.ascii.isDigit(text[idx + 1]);
+    return false;
+}
+
+fn isJsonPunct(ch: u8) bool {
+    return switch (ch) {
+        '{', '}', '[', ']', ':', ',' => true,
+        else => false,
+    };
+}
+
+fn isJsonKeyword(word: []const u8) bool {
+    return std.mem.eql(u8, word, "true") or std.mem.eql(u8, word, "false") or std.mem.eql(u8, word, "null");
+}
+
 fn renderBodyInput(
     win: vaxis.Window,
     start_row: u16,
     input: *const text_input.TextInput,
     style: vaxis.Style,
-    highlight_style: vaxis.Style,
-    empty_style: vaxis.Style,
+    theme: theme_mod.Theme,
     cursor_visible: bool,
+    is_json: bool,
+    mode: app_mod.BodyEditMode,
 ) void {
-    _ = empty_style;
     const max_lines: usize = if (win.height > start_row) win.height - start_row else 0;
     if (max_lines == 0) return;
 
@@ -385,29 +588,42 @@ fn renderBodyInput(
             continue;
         }
         if (line_index == cursor.row) {
-            var cursor_style = style;
-            cursor_style.reverse = !style.reverse;
-            drawInputWithCursorPrefix(win, row, line, cursor.col, style, cursor_style, cursor_visible, "");
+            const view = visibleSlice(line, cursor.col, win.width);
+            if (is_json) {
+                drawJsonLine(win, row, view.slice, style, theme);
+            } else {
+                drawLine(win, row, view.slice, style);
+            }
+            if (cursor_visible) {
+                win.setCursorShape(if (mode == .insert) .beam else .block);
+                win.showCursor(view.cursor_pos, row);
+            } else {
+                win.hideCursor();
+            }
         } else {
-            const line_style = if (isHighlightLine(line)) highlight_style else style;
-            drawLine(win, row, line, line_style);
+            if (is_json) {
+                drawJsonLine(win, row, line, style, theme);
+            } else {
+                drawLineClipped(win, row, line, style);
+            }
         }
         row += 1;
         line_index += 1;
     }
     if (text.len == 0 and row < win.height) {
-        var cursor_style = style;
-        cursor_style.reverse = !style.reverse;
-        drawInputWithCursorPrefix(win, row, "", 0, style, cursor_style, cursor_visible, "");
+        const view = visibleSlice("", 0, win.width);
+        if (is_json) {
+            drawJsonLine(win, row, view.slice, style, theme);
+        } else {
+            drawLine(win, row, view.slice, style);
+        }
+        if (cursor_visible) {
+            win.setCursorShape(if (mode == .insert) .beam else .block);
+            win.showCursor(view.cursor_pos, row);
+        } else {
+            win.hideCursor();
+        }
     }
-}
-
-fn isHighlightLine(line: []const u8) bool {
-    if (line.len == 0) return false;
-    return switch (line[0]) {
-        '{', '}', '[', ']' => true,
-        else => false,
-    };
 }
 
 fn isUrlSelected(app: *app_mod.App) bool {
@@ -468,6 +684,30 @@ fn isContentSelected(app: *app_mod.App) bool {
         .body => true,
         .options => true,
     };
+}
+
+fn isJsonBody(app: *app_mod.App) bool {
+    for (app.current_command.headers.items) |header| {
+        if (!header.enabled) continue;
+        if (!std.ascii.eqlIgnoreCase(header.key, "Content-Type")) continue;
+        if (containsIgnoreCase(header.value, "application/json")) return true;
+    }
+    return false;
+}
+
+fn containsIgnoreCase(haystack: []const u8, needle: []const u8) bool {
+    if (needle.len == 0 or haystack.len < needle.len) return false;
+    var i: usize = 0;
+    while (i + needle.len <= haystack.len) : (i += 1) {
+        var j: usize = 0;
+        while (j < needle.len) : (j += 1) {
+            const a = std.ascii.toLower(haystack[i + j]);
+            const b = std.ascii.toLower(needle[j]);
+            if (a != b) break;
+        }
+        if (j == needle.len) return true;
+    }
+    return false;
 }
 
 fn bodyTypeLabel(app: *app_mod.App) []const u8 {

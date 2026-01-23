@@ -16,8 +16,15 @@ pub fn render(
     drawLine(win, 0, title, theme.title);
     drawKeyPair(allocator, win, 1, "State", state, "Tab", tab, theme);
 
+    const edit_value = editLabel(app);
+    var edit_style = theme.text;
+    if (app.state == .editing and app.editing_field != null) {
+        edit_style.bold = true;
+    }
+    drawKeyValueStyled(allocator, win, 2, "Edit", edit_value, edit_style);
+
     const env_name = currentEnvironmentName(app);
-    drawKeyValue(allocator, win, 2, "Env", env_name, theme);
+    drawKeyValue(allocator, win, 3, "Env", env_name, theme);
 }
 
 fn drawLine(win: vaxis.Window, row: u16, text: []const u8, style: vaxis.Style) void {
@@ -35,6 +42,19 @@ fn drawKeyValue(
 ) void {
     const line = std.fmt.allocPrint(allocator, "{s}: {s}", .{ key, value }) catch return;
     const segments = [_]vaxis.Segment{.{ .text = line, .style = theme.text }};
+    _ = win.print(&segments, .{ .row_offset = row, .wrap = .none });
+}
+
+fn drawKeyValueStyled(
+    allocator: std.mem.Allocator,
+    win: vaxis.Window,
+    row: u16,
+    key: []const u8,
+    value: []const u8,
+    style: vaxis.Style,
+) void {
+    const line = std.fmt.allocPrint(allocator, "{s}: {s}", .{ key, value }) catch return;
+    const segments = [_]vaxis.Segment{.{ .text = line, .style = style }};
     _ = win.print(&segments, .{ .row_offset = row, .wrap = .none });
 }
 
@@ -73,6 +93,22 @@ fn tabLabel(tab: app_mod.Tab) []const u8 {
         .headers => "headers",
         .body => "body",
         .options => "options",
+    };
+}
+
+fn editLabel(app: *app_mod.App) []const u8 {
+    if (app.state != .editing or app.editing_field == null) return "none";
+    return switch (app.editing_field.?) {
+        .url => "url",
+        .method => "method",
+        .header_key => "header key",
+        .header_value => "header value",
+        .query_param_key => "query key",
+        .query_param_value => "query value",
+        .body => if (app.ui.body_mode == .insert) "body (insert)" else "body (normal)",
+        .option_value => "option",
+        .template_name => "template name",
+        .template_folder => "template folder",
     };
 }
 

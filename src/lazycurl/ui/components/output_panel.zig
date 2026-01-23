@@ -63,8 +63,8 @@ pub fn render(
         _ = drawOutputBody(
             win,
             body_start,
-            stdout_text,
             body_height,
+            stdout_text,
             stderr_text,
             app.ui.output_scroll,
             theme,

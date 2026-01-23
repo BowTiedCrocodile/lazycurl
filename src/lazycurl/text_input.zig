@@ -32,6 +32,19 @@ pub const TextInput = struct {
         self.cursor += 1;
     }
 
+    pub fn insertPair(self: *TextInput, open: u8, close: u8) !void {
+        try self.buffer.insert(self.allocator, self.cursor, open);
+        self.cursor += 1;
+        try self.buffer.insert(self.allocator, self.cursor, close);
+    }
+
+    pub fn skipIfNext(self: *TextInput, byte: u8) bool {
+        if (self.cursor >= self.buffer.items.len) return false;
+        if (self.buffer.items[self.cursor] != byte) return false;
+        self.cursor += 1;
+        return true;
+    }
+
     pub fn backspace(self: *TextInput) void {
         if (self.cursor == 0) return;
         self.cursor -= 1;
@@ -57,6 +70,14 @@ pub const TextInput = struct {
 
     pub fn moveEnd(self: *TextInput) void {
         self.cursor = self.buffer.items.len;
+    }
+
+    pub fn moveLineHome(self: *TextInput) void {
+        self.cursor = lineStart(self.buffer.items, self.cursor);
+    }
+
+    pub fn moveLineEnd(self: *TextInput) void {
+        self.cursor = lineEnd(self.buffer.items, self.cursor);
     }
 
     pub fn moveUp(self: *TextInput) void {
@@ -95,6 +116,40 @@ pub const TextInput = struct {
         }
         return .{ .row = row, .col = col };
     }
+
+    pub fn moveWordForward(self: *TextInput) void {
+        var i = self.cursor;
+        const buf = self.buffer.items;
+        if (i >= buf.len) return;
+        while (i < buf.len and isWordChar(buf[i])) : (i += 1) {}
+        while (i < buf.len and !isWordChar(buf[i])) : (i += 1) {}
+        self.cursor = i;
+    }
+
+    pub fn moveWordBackward(self: *TextInput) void {
+        if (self.cursor == 0) return;
+        var i = self.cursor - 1;
+        const buf = self.buffer.items;
+        while (i > 0 and !isWordChar(buf[i])) : (i -= 1) {}
+        if (!isWordChar(buf[i]) and i == 0) {
+            self.cursor = 0;
+            return;
+        }
+        while (i > 0 and isWordChar(buf[i - 1])) : (i -= 1) {}
+        self.cursor = i;
+    }
+
+    pub fn currentLineStart(self: *const TextInput) usize {
+        return lineStart(self.buffer.items, self.cursor);
+    }
+
+    pub fn currentLineEnd(self: *const TextInput) usize {
+        return lineEnd(self.buffer.items, self.cursor);
+    }
+
+    pub fn setCursor(self: *TextInput, idx: usize) void {
+        self.cursor = @min(idx, self.buffer.items.len);
+    }
 };
 
 fn lineStart(buf: []const u8, idx: usize) usize {
@@ -114,6 +169,10 @@ fn lineEnd(buf: []const u8, idx: usize) usize {
         if (buf[i] == '\n') return i;
     }
     return buf.len;
+}
+
+fn isWordChar(ch: u8) bool {
+    return std.ascii.isAlphanumeric(ch) or ch == '_';
 }
 
 test "text input insert and delete" {

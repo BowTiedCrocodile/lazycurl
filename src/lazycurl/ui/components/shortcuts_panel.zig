@@ -17,10 +17,21 @@ fn drawLine(win: vaxis.Window, row: u16, text: []const u8, style: vaxis.Style) v
 fn contextLines(app: *app_mod.App) []const []const u8 {
     if (app.state == .editing) {
         if (app.editing_field == .body) {
+            if (app.ui.body_mode == .insert) {
+                return &[_][]const u8{
+                    "Ctrl+S/F2 Save",
+                    "Enter Newline",
+                    "Esc Normal",
+                };
+            }
             return &[_][]const u8{
-                "Ctrl+S/F2 Save",
-                "Enter Newline",
-                "Esc Cancel",
+                "i/a Insert",
+                "h/j/k/l Move",
+                "w/b Word",
+                "0/$ Line",
+                "x Delete",
+                "o/O Newline",
+                "Esc Exit",
             };
         }
         return &[_][]const u8{

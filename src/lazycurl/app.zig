@@ -138,6 +138,11 @@ pub const BodyField = enum {
     content,
 };
 
+pub const BodyEditMode = enum {
+    insert,
+    normal,
+};
+
 pub const SelectedField = union(enum) {
     url: UrlField,
     headers: usize,
@@ -168,10 +173,11 @@ pub const UiState = struct {
     output_scroll: usize = 0,
     output_total_lines: usize = 0,
     output_view_height: u16 = 0,
-    output_follow: bool = true,
+    output_follow: bool = false,
     output_rect: ?PanelRect = null,
     output_copy_rect: ?PanelRect = null,
     output_copy_until_ms: i64 = 0,
+    body_mode: BodyEditMode = .insert,
 };
 
 pub const LeftPanel = enum {
@@ -499,17 +505,17 @@ pub const App = struct {
     }
 
     fn handleEditingKey(self: *App, input: KeyInput) !bool {
+        const field = self.editing_field orelse return false;
+        if (field == .body) {
+            return self.handleBodyEditingKey(input);
+        }
+
         if (input.code == .escape) {
             self.state = .normal;
             self.editing_field = null;
             self.ui.editing_template_index = null;
             self.ui.new_folder_active = false;
             return false;
-        }
-
-        const field = self.editing_field orelse return false;
-        if (field == .body) {
-            return self.handleBodyEditingKey(input);
         }
 
         return self.handleSingleLineEditingKey(input);
@@ -652,6 +658,7 @@ pub const App = struct {
 
                             self.state = .editing;
                             self.editing_field = .body;
+                            self.ui.body_mode = .insert;
                             const content = if (self.current_command.body) |body| switch (body) {
                                 .raw => |payload| payload,
                                 else => "",
@@ -1039,7 +1046,68 @@ pub const App = struct {
             }
         }
 
+        if (self.ui.body_mode == .normal) {
+            switch (input.code) {
+                .escape => {
+                    try self.commitBodyEdit();
+                    return false;
+                },
+                .left => self.ui.body_input.moveLeft(),
+                .right => self.ui.body_input.moveRight(),
+                .up => self.ui.body_input.moveUp(),
+                .down => self.ui.body_input.moveDown(),
+                .home => self.ui.body_input.moveLineHome(),
+                .end => self.ui.body_input.moveLineEnd(),
+                .char => |ch| {
+                    if (input.mods.ctrl) return false;
+                    switch (ch) {
+                        'h' => self.ui.body_input.moveLeft(),
+                        'j' => self.ui.body_input.moveDown(),
+                        'k' => self.ui.body_input.moveUp(),
+                        'l' => self.ui.body_input.moveRight(),
+                        '0' => self.ui.body_input.moveLineHome(),
+                        '$' => self.ui.body_input.moveLineEnd(),
+                        'w' => self.ui.body_input.moveWordForward(),
+                        'b' => self.ui.body_input.moveWordBackward(),
+                        'x' => self.ui.body_input.delete(),
+                        'i' => self.ui.body_mode = .insert,
+                        'a' => {
+                            self.ui.body_input.moveRight();
+                            self.ui.body_mode = .insert;
+                        },
+                        'o' => {
+                            const line_end = self.ui.body_input.currentLineEnd();
+                            const buf = self.ui.body_input.slice();
+                            if (line_end < buf.len and buf[line_end] == '\n') {
+                                self.ui.body_input.setCursor(line_end + 1);
+                            } else {
+                                self.ui.body_input.setCursor(line_end);
+                            }
+                            try self.ui.body_input.insertByte('\n');
+                            self.ui.body_mode = .insert;
+                        },
+                        'O' => {
+                            const line_start = self.ui.body_input.currentLineStart();
+                            self.ui.body_input.setCursor(line_start);
+                            try self.ui.body_input.insertByte('\n');
+                            self.ui.body_input.moveLeft();
+                            self.ui.body_mode = .insert;
+                        },
+                        'G' => self.ui.body_input.moveEnd(),
+                        else => {},
+                    }
+                    return false;
+                },
+                else => return false,
+            }
+            return false;
+        }
+
         switch (input.code) {
+            .escape => {
+                self.ui.body_mode = .normal;
+                return false;
+            },
             .enter => {
                 try self.ui.body_input.insertByte('\n');
                 return false;
@@ -1069,16 +1137,39 @@ pub const App = struct {
                 return false;
             },
             .home => {
-                self.ui.body_input.moveHome();
+                self.ui.body_input.moveLineHome();
                 return false;
             },
             .end => {
-                self.ui.body_input.moveEnd();
+                self.ui.body_input.moveLineEnd();
                 return false;
             },
             .char => |ch| {
-                if (!input.mods.ctrl) {
-                    try self.ui.body_input.insertByte(ch);
+                if (input.mods.ctrl) return false;
+                switch (ch) {
+                    '"', '\'', '{', '[', '(' => {
+                        const close = switch (ch) {
+                            '"' => '"',
+                            '\'' => '\'',
+                            '{' => '}',
+                            '[' => ']',
+                            '(' => ')',
+                            else => ch,
+                        };
+                        if (ch == '"' or ch == '\'') {
+                            if (!self.ui.body_input.skipIfNext(ch)) {
+                                try self.ui.body_input.insertPair(ch, close);
+                            }
+                        } else {
+                            try self.ui.body_input.insertPair(ch, close);
+                        }
+                    },
+                    '}', ']', ')' => {
+                        if (!self.ui.body_input.skipIfNext(ch)) {
+                            try self.ui.body_input.insertByte(ch);
+                        }
+                    },
+                    else => try self.ui.body_input.insertByte(ch),
                 }
                 return false;
             },
