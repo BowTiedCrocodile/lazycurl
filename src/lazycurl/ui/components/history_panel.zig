@@ -2,7 +2,7 @@ const std = @import("std");
 const vaxis = @import("vaxis");
 const app_mod = @import("lazycurl_app");
 const theme_mod = @import("../theme.zig");
-const boxed = @import("boxed.zig");
+const boxed = @import("lib/boxed.zig");
 
 const TimestampMode = enum {
     full,

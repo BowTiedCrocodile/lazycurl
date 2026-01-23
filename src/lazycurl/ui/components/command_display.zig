@@ -1,7 +1,7 @@
 const std = @import("std");
 const vaxis = @import("vaxis");
 const theme_mod = @import("../theme.zig");
-const boxed = @import("boxed.zig");
+const boxed = @import("lib/boxed.zig");
 
 pub fn render(
     allocator: std.mem.Allocator,

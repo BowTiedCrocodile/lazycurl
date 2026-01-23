@@ -4,7 +4,7 @@ const app_mod = @import("lazycurl_app");
 const text_input = @import("lazycurl_text_input");
 const theme_mod = @import("../theme.zig");
 const options_panel = @import("options_panel.zig");
-const boxed = @import("boxed.zig");
+const boxed = @import("lib/boxed.zig");
 
 pub fn render(
     allocator: std.mem.Allocator,
