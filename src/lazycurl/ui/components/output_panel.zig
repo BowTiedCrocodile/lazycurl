@@ -28,40 +28,47 @@ pub fn render(
         "Status: idle";
 
     const status_style = if (runtime.active_job != null) theme.accent else if (runtime.last_result != null) theme.text else theme.muted;
-    drawLine(win, 1, status_line, status_style);
+    var meta_lines: [3]MetaLine = undefined;
+    var meta_count: usize = 0;
+    meta_lines[meta_count] = .{ .text = status_line, .style = status_style, .row = 1 };
+    meta_count += 1;
 
-    var row: u16 = 2;
     if (runtime.last_result) |result| {
         const exit_line = if (result.exit_code) |code|
             std.fmt.allocPrint(allocator, "Exit: {d}", .{code}) catch return
         else
             std.fmt.allocPrint(allocator, "Exit: unknown", .{}) catch return;
         const exit_style = if (result.exit_code != null and result.exit_code.? == 0) theme.success else theme.error_style;
-        drawLine(win, row, exit_line, exit_style);
-        row += 1;
+        meta_lines[meta_count] = .{ .text = exit_line, .style = exit_style, .row = 2 };
+        meta_count += 1;
 
         const duration_ms = result.duration_ns / std.time.ns_per_ms;
         const dur_line = std.fmt.allocPrint(allocator, "Time: {d} ms", .{duration_ms}) catch return;
-        drawLine(win, row, dur_line, theme.muted);
-        row += 1;
+        meta_lines[meta_count] = .{ .text = dur_line, .style = theme.muted, .row = 3 };
+        meta_count += 1;
     }
 
-    const body_start = row;
+    const reserved_width = maxMetaWidth(meta_lines[0..meta_count], win.height);
+    drawMetaLines(win, meta_lines[0..meta_count], win.height);
+
+    const body_start: u16 = 1;
     const body_height: u16 = if (win.height > body_start) win.height - body_start else 0;
     const stdout_text = runtimeOutput(runtime, .stdout);
     const stderr_text = runtimeOutput(runtime, .stderr);
-    const total_lines = countLines(stdout_text) + countLines(stderr_text) + 2;
+    const total_lines = countLines(stdout_text) + countLines(stderr_text) + 1;
+    const content_width: u16 = if (win.width > reserved_width) win.width - reserved_width else 0;
     app.updateOutputMetrics(total_lines, body_height);
+    if (body_height > 0 and content_width > 0) {
 
-    if (body_height > 0) {
         _ = drawOutputBody(
             win,
             body_start,
-            body_height,
             stdout_text,
+            body_height,
             stderr_text,
             app.ui.output_scroll,
             theme,
+            content_width,
         );
     }
 }
@@ -108,6 +115,36 @@ fn copyLabelCol(width: u16, label_len: usize) ?u16 {
     return width - needed;
 }
 
+const MetaLine = struct {
+    text: []const u8,
+    style: vaxis.Style,
+    row: u16,
+};
+
+fn drawMetaLines(win: vaxis.Window, lines: []const MetaLine, height: u16) void {
+    for (lines) |line| {
+        if (line.row >= height) continue;
+        const col = rightJustifyCol(win.width, line.text.len);
+        const segment = vaxis.Segment{ .text = line.text, .style = line.style };
+        _ = win.print(&.{segment}, .{ .row_offset = line.row, .col_offset = col, .wrap = .none });
+    }
+}
+
+fn rightJustifyCol(width: u16, text_len: usize) u16 {
+    if (text_len >= width) return 0;
+    return width - @as(u16, @intCast(text_len));
+}
+
+fn maxMetaWidth(lines: []const MetaLine, height: u16) u16 {
+    var max_len: usize = 0;
+    for (lines) |line| {
+        if (line.row >= height) continue;
+        if (line.text.len > max_len) max_len = line.text.len;
+    }
+    if (max_len == 0) return 0;
+    return @as(u16, @intCast(max_len + 1));
+}
+
 fn countLines(text: []const u8) usize {
     if (text.len == 0) return 0;
     var count: usize = 1;
@@ -125,14 +162,15 @@ fn drawOutputBody(
     stderr_text: []const u8,
     scroll: usize,
     theme: theme_mod.Theme,
+    content_width: u16,
 ) u16 {
     var row = start_row;
     var skip = scroll;
     const max_row = start_row + height;
 
-    row = drawSection(win, row, max_row, "Stdout:", theme.muted, stdout_text, theme.text, &skip);
+    row = drawSection(win, row, max_row, null, theme.muted, stdout_text, theme.text, &skip, content_width);
     if (row < max_row) {
-        row = drawSection(win, row, max_row, "Stderr:", theme.muted, stderr_text, theme.error_style, &skip);
+        row = drawSection(win, row, max_row, "Stderr:", theme.muted, stderr_text, theme.error_style, &skip, content_width);
     }
     return row;
 }
@@ -141,20 +179,23 @@ fn drawSection(
     win: vaxis.Window,
     start_row: u16,
     max_row: u16,
-    label: []const u8,
+    label: ?[]const u8,
     label_style: vaxis.Style,
     text: []const u8,
     text_style: vaxis.Style,
     skip: *usize,
+    content_width: u16,
 ) u16 {
     var row = start_row;
     if (row >= max_row) return row;
 
-    if (skip.* == 0) {
-        drawLine(win, row, label, label_style);
-        row += 1;
-    } else {
-        skip.* -= 1;
+    if (label) |actual| {
+        if (skip.* == 0) {
+            drawLineClipped(win, row, actual, label_style, content_width);
+            row += 1;
+        } else {
+            skip.* -= 1;
+        }
     }
 
     var it = std.mem.splitScalar(u8, text, '\n');
@@ -164,7 +205,7 @@ fn drawSection(
             skip.* -= 1;
             continue;
         }
-        drawLine(win, row, line, text_style);
+        drawLineClipped(win, row, line, text_style, content_width);
         row += 1;
     }
     return row;
@@ -174,4 +215,11 @@ fn drawLine(win: vaxis.Window, row: u16, text: []const u8, style: vaxis.Style) v
     if (row >= win.height) return;
     const segments = [_]vaxis.Segment{.{ .text = text, .style = style }};
     _ = win.print(&segments, .{ .row_offset = row, .wrap = .none });
+}
+
+fn drawLineClipped(win: vaxis.Window, row: u16, text: []const u8, style: vaxis.Style, max_width: u16) void {
+    if (max_width == 0) return;
+    const limit: usize = @intCast(max_width);
+    const slice = if (text.len > limit) text[0..limit] else text;
+    drawLine(win, row, slice, style);
 }
