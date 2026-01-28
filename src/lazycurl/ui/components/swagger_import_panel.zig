@@ -24,24 +24,28 @@ pub fn render(
 
     drawSourceLine(allocator, inner, app, theme);
 
-    const footer_rows: u16 = 3;
+    const footer_rows: u16 = 4;
     if (inner.height <= 1 + footer_rows) return;
     const input_h: u16 = inner.height - 1 - footer_rows;
+    const input_x: u16 = 0;
+    const input_w: u16 = if (inner.width > 1) inner.width - 1 else inner.width;
     const input_container = inner.child(.{
-        .x_off = 0,
+        .x_off = input_x,
         .y_off = 1,
-        .width = inner.width,
+        .width = input_w,
         .height = input_h,
         .border = .{ .where = .none },
     });
     renderInputBox(allocator, input_container, app, theme);
 
-    const error_row: u16 = inner.height - 3;
-    const folder_row: u16 = inner.height - 2;
+    const error_row: u16 = inner.height - 4;
+    const folder_row: u16 = inner.height - 3;
+    const new_folder_row: u16 = inner.height - 2;
     const action_row: u16 = inner.height - 1;
 
     drawErrorLine(inner, error_row, app, theme);
     drawFolderLine(allocator, inner, folder_row, app, theme);
+    drawNewFolderLine(inner, new_folder_row, app, theme);
     drawActionsLine(allocator, inner, action_row, app, theme);
 }
 
@@ -91,6 +95,7 @@ fn renderInputBox(allocator: std.mem.Allocator, win: vaxis.Window, app: *app_mod
     }
     const inner = boxed.begin(allocator, win, title, "", border_style, title_style, theme.muted);
     if (inner.height == 0 or inner.width == 0) return;
+    inner.clear();
     switch (app.ui.import_source) {
         .paste => renderMultilineInput(inner, app, theme, focused),
         .file => renderSingleLineInput(inner, app.ui.import_path_input.slice(), app.ui.import_path_input.cursor, "Path to swagger.json", theme, focused, app.ui.cursor_visible),
@@ -165,6 +170,44 @@ fn drawFolderLine(allocator: std.mem.Allocator, win: vaxis.Window, row: u16, app
     drawLineClipped(win, row, line, value_style);
 }
 
+fn drawNewFolderLine(win: vaxis.Window, row: u16, app: *app_mod.App, theme: theme_mod.Theme) void {
+    if (row >= win.height) return;
+    const selected = isNewFolderSelected(app);
+    const value = app.ui.import_new_folder_input.slice();
+    if (!selected and value.len == 0) {
+        drawLineClipped(win, row, "New folder: select 'New Folder…' to name", theme.muted);
+        return;
+    }
+    const placeholder = "New folder name";
+    const focused = app.ui.import_focus == .folder and selected;
+    if (value.len == 0 and !focused) {
+        drawLineClipped(win, row, placeholder, theme.muted);
+        return;
+    }
+    const cursor_style = cursorStyle(theme, focused);
+    const line_prefix = "New folder: ";
+    const prefix_len: u16 = @intCast(line_prefix.len);
+    if (prefix_len >= win.width) return;
+    const prefix_segments = [_]vaxis.Segment{.{ .text = line_prefix, .style = theme.muted }};
+    _ = win.print(prefix_segments[0..], .{ .row_offset = row, .wrap = .none });
+    const input_win = win.child(.{
+        .x_off = prefix_len,
+        .y_off = row,
+        .width = win.width - prefix_len,
+        .height = 1,
+        .border = .{ .where = .none },
+    });
+    drawInputLineWithCursor(
+        input_win,
+        0,
+        value,
+        app.ui.import_new_folder_input.cursor,
+        theme.text,
+        cursor_style,
+        focused and app.ui.cursor_visible,
+    );
+}
+
 fn drawActionsLine(allocator: std.mem.Allocator, win: vaxis.Window, row: u16, app: *app_mod.App, theme: theme_mod.Theme) void {
     if (row >= win.height) return;
     const focus = app.ui.import_focus == .actions;
@@ -192,10 +235,16 @@ fn drawErrorLine(win: vaxis.Window, row: u16, app: *app_mod.App, theme: theme_mo
 }
 
 fn folderLabel(app: *app_mod.App) []const u8 {
+    if (isNewFolderSelected(app)) return "New Folder…";
     if (app.ui.import_folder_index == 0) return "Root";
     const idx = app.ui.import_folder_index - 1;
     if (idx >= app.templates_folders.items.len) return "Root";
     return app.templates_folders.items[idx];
+}
+
+fn isNewFolderSelected(app: *app_mod.App) bool {
+    const new_index = app.templates_folders.items.len + 1;
+    return app.ui.import_folder_index == new_index;
 }
 
 fn cursorStyle(theme: theme_mod.Theme, focused: bool) vaxis.Style {
@@ -210,6 +259,10 @@ fn drawLineClipped(win: vaxis.Window, row: u16, text: []const u8, style: vaxis.S
     const slice = if (text.len > limit) text[0..limit] else text;
     const segments = [_]vaxis.Segment{.{ .text = slice, .style = style }};
     _ = win.print(&segments, .{ .row_offset = row, .wrap = .none });
+    const printed: u16 = @intCast(slice.len);
+    if (printed < win.width) {
+        fillSpaces(win, row, printed, win.width - printed, style);
+    }
 }
 
 const VisibleSlice = struct {
@@ -255,6 +308,25 @@ fn drawInputLineWithCursor(
         .{ .text = after, .style = style },
     };
     _ = win.print(segments[0..], .{ .row_offset = row, .wrap = .none });
+    const printed_len: usize = before.len + cursor_char.len + after.len;
+    const printed: u16 = if (printed_len > win.width) win.width else @intCast(printed_len);
+    if (printed < win.width) {
+        fillSpaces(win, row, printed, win.width - printed, style);
+    }
+}
+
+fn fillSpaces(win: vaxis.Window, row: u16, col: u16, count: u16, style: vaxis.Style) void {
+    if (count == 0 or col >= win.width) return;
+    var remaining: u16 = count;
+    var offset: u16 = col;
+    const spaces = "                                                                ";
+    while (remaining > 0) {
+        const chunk: u16 = @min(remaining, @as(u16, spaces.len));
+        const segments = [_]vaxis.Segment{.{ .text = spaces[0..chunk], .style = style }};
+        _ = win.print(&segments, .{ .row_offset = row, .col_offset = offset, .wrap = .none });
+        remaining -= chunk;
+        offset += chunk;
+    }
 }
 
 fn countLines(buffer: []const u8) usize {

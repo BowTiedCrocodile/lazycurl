@@ -200,6 +200,7 @@ pub const UiState = struct {
     import_spec_input: text_input.TextInput,
     import_path_input: text_input.TextInput,
     import_url_input: text_input.TextInput,
+    import_new_folder_input: text_input.TextInput,
     import_error: ?[]u8 = null,
 };
 
@@ -302,6 +303,7 @@ pub const App = struct {
         const import_spec_input = try text_input.TextInput.init(allocator);
         const import_path_input = try text_input.TextInput.init(allocator);
         const import_url_input = try text_input.TextInput.init(allocator);
+        const import_new_folder_input = try text_input.TextInput.init(allocator);
 
         return .{
             .allocator = allocator,
@@ -319,6 +321,7 @@ pub const App = struct {
                 .import_spec_input = import_spec_input,
                 .import_path_input = import_path_input,
                 .import_url_input = import_url_input,
+                .import_new_folder_input = import_new_folder_input,
             },
         };
     }
@@ -344,6 +347,7 @@ pub const App = struct {
         self.ui.import_spec_input.deinit();
         self.ui.import_path_input.deinit();
         self.ui.import_url_input.deinit();
+        self.ui.import_new_folder_input.deinit();
         if (self.ui.import_error) |message| {
             self.allocator.free(message);
             self.ui.import_error = null;
@@ -618,6 +622,8 @@ pub const App = struct {
                 switch (input.code) {
                     .left => self.setImportSource(prevImportSource(self.ui.import_source)),
                     .right => self.setImportSource(nextImportSource(self.ui.import_source)),
+                    .down => self.ui.import_focus = .input,
+                    .up => self.ui.import_focus = .actions,
                     .char => |ch| {
                         if (ch == 'p') self.setImportSource(.paste);
                         if (ch == 'f') self.setImportSource(.file);
@@ -628,6 +634,14 @@ pub const App = struct {
                 return false;
             },
             .input => {
+                if (input.code == .up and self.ui.import_source != .paste) {
+                    self.ui.import_focus = .source;
+                    return false;
+                }
+                if (input.code == .down and self.ui.import_source != .paste) {
+                    self.ui.import_focus = .folder;
+                    return false;
+                }
                 if (self.ui.import_source == .file) {
                     return self.handleImportPathInput(input);
                 }
@@ -637,10 +651,34 @@ pub const App = struct {
                 return self.handleImportSpecInput(input);
             },
             .folder => {
-                switch (input.code) {
-                    .left, .up => self.moveImportFolder(-1),
-                    .right, .down => self.moveImportFolder(1),
-                    else => {},
+                if (self.isImportNewFolderSelected()) {
+                    switch (input.code) {
+                        .left => self.moveImportFolder(-1),
+                        .right => self.moveImportFolder(1),
+                        .up => self.ui.import_focus = .input,
+                        .down => self.ui.import_focus = .actions,
+                        .enter => self.importFocusNext(),
+                        .paste => |text| try self.ui.import_new_folder_input.insertSlice(firstLine(text)),
+                        .backspace => self.ui.import_new_folder_input.backspace(),
+                        .delete => self.ui.import_new_folder_input.delete(),
+                        .home => self.ui.import_new_folder_input.moveHome(),
+                        .end => self.ui.import_new_folder_input.moveEnd(),
+                        .char => |ch| {
+                            if (!input.mods.ctrl) {
+                                try self.ui.import_new_folder_input.insertByte(ch);
+                            }
+                        },
+                        else => {},
+                    }
+                } else {
+                    switch (input.code) {
+                        .left => self.moveImportFolder(-1),
+                        .right => self.moveImportFolder(1),
+                        .up => self.ui.import_focus = .input,
+                        .down => self.ui.import_focus = .actions,
+                        .enter => self.importFocusNext(),
+                        else => {},
+                    }
                 }
                 return false;
             },
@@ -656,6 +694,8 @@ pub const App = struct {
                             self.ui.import_action_index += 1;
                         }
                     },
+                    .up => self.ui.import_focus = .folder,
+                    .down => self.ui.import_focus = .source,
                     .enter => {
                         if (self.ui.import_action_index == 0) {
                             try self.tryImportSwagger();
@@ -721,6 +761,8 @@ pub const App = struct {
     }
 
     fn handleImportSpecInput(self: *App, input: KeyInput) !bool {
+        const cursor = self.ui.import_spec_input.cursorPosition();
+        const total_lines = countLines(self.ui.import_spec_input.slice());
         switch (input.code) {
             .enter => try self.ui.import_spec_input.insertByte('\n'),
             .paste => |text| try self.ui.import_spec_input.insertSlice(text),
@@ -728,8 +770,20 @@ pub const App = struct {
             .delete => self.ui.import_spec_input.delete(),
             .left => self.ui.import_spec_input.moveLeft(),
             .right => self.ui.import_spec_input.moveRight(),
-            .up => self.ui.import_spec_input.moveUp(),
-            .down => self.ui.import_spec_input.moveDown(),
+            .up => {
+                if (cursor.row == 0) {
+                    self.ui.import_focus = .source;
+                } else {
+                    self.ui.import_spec_input.moveUp();
+                }
+            },
+            .down => {
+                if (cursor.row + 1 >= total_lines) {
+                    self.ui.import_focus = .folder;
+                } else {
+                    self.ui.import_spec_input.moveDown();
+                }
+            },
             .home => self.ui.import_spec_input.moveLineHome(),
             .end => self.ui.import_spec_input.moveLineEnd(),
             .page_up => moveInputLines(&self.ui.import_spec_input, -10),
@@ -750,6 +804,7 @@ pub const App = struct {
         self.ui.import_focus = .input;
         self.ui.import_action_index = 0;
         self.ui.import_spec_scroll = 0;
+        self.ui.import_new_folder_input.reset("") catch {};
         self.clearImportError();
         try self.syncImportFolderSelection();
     }
@@ -796,6 +851,15 @@ pub const App = struct {
         return std.mem.trim(u8, line, " \t\r\n");
     }
 
+    fn countLines(buffer: []const u8) usize {
+        if (buffer.len == 0) return 1;
+        var count: usize = 1;
+        for (buffer) |ch| {
+            if (ch == '\n') count += 1;
+        }
+        return count;
+    }
+
     fn importFocusNext(self: *App) void {
         self.ui.import_focus = switch (self.ui.import_focus) {
             .source => .input,
@@ -815,7 +879,7 @@ pub const App = struct {
     }
 
     fn moveImportFolder(self: *App, delta: i32) void {
-        const count: usize = self.templates_folders.items.len + 1;
+        const count: usize = self.templates_folders.items.len + 2;
         if (count == 0) {
             self.ui.import_folder_index = 0;
             return;
@@ -862,9 +926,22 @@ pub const App = struct {
         return self.templates_folders.items[idx];
     }
 
+    fn isImportNewFolderSelected(self: *App) bool {
+        const new_index = self.templates_folders.items.len + 1;
+        return self.ui.import_folder_index == new_index;
+    }
+
     fn tryImportSwagger(self: *App) !void {
         self.clearImportError();
-        const category = self.importSelectedCategory();
+        var category = self.importSelectedCategory();
+        if (self.isImportNewFolderSelected()) {
+            const raw_name = std.mem.trim(u8, self.ui.import_new_folder_input.slice(), " \t\r\n");
+            if (raw_name.len == 0) {
+                try self.setImportError("New folder name required");
+                return;
+            }
+            category = raw_name;
+        }
         if (self.ui.import_source == .file) {
             const raw_path = std.mem.trim(u8, self.ui.import_path_input.slice(), " \t\r\n");
             if (raw_path.len == 0) {
@@ -964,6 +1041,7 @@ pub const App = struct {
         self.ui.import_spec_input.reset("") catch {};
         self.ui.import_path_input.reset("") catch {};
         self.ui.import_url_input.reset("") catch {};
+        self.ui.import_new_folder_input.reset("") catch {};
         self.closeSwaggerImport();
         self.ui.templates_expanded = true;
         self.focusLeftPanel(.templates);
