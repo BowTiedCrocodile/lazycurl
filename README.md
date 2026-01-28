@@ -114,6 +114,7 @@ Templates panel (focused)
 - `F4` New folder
 - `Delete` Remove selected template or folder
 - `Ctrl+Z` Undo delete (last 10)
+- `Ctrl+D` Duplicate template
 
 ### Basic Workflow
 

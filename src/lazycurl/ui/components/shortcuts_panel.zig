@@ -80,6 +80,7 @@ fn contextLines(app: *app_mod.App) []const []const u8 {
                 "F4 New Folder",
                 "Delete Remove",
                 "Ctrl+Z Undo Delete",
+                "Ctrl+D Duplicate",
             },
             .environments => &[_][]const u8{
                 "Enter Select",

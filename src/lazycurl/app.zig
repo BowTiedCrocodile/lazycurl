@@ -476,6 +476,13 @@ pub const App = struct {
                         self.ensureTemplateSelection();
                         return false;
                     }
+                    if (ch == 'd') {
+                        if (self.ui.left_panel != null and self.ui.left_panel.? == .templates) {
+                            try self.duplicateSelectedTemplate();
+                            self.ensureTemplateSelection();
+                            return false;
+                        }
+                    }
                 },
                 else => {},
             }
@@ -2157,6 +2164,58 @@ pub const App = struct {
             oldest.deinit(self.allocator);
         }
         try self.undo_stack.append(self.allocator, entry);
+    }
+
+    fn duplicateSelectedTemplate(self: *App) !void {
+        const row = try self.selectedTemplateRow() orelse return;
+        if (row.kind != .template) return;
+        const idx = row.template_index orelse return;
+        if (idx >= self.templates.items.len) return;
+        const source = &self.templates.items[idx];
+
+        const new_name = try self.makeTemplateCopyName(source.name);
+        defer self.allocator.free(new_name);
+        var cloned_command = try cloneCommand(self.allocator, &self.id_generator, &source.command);
+        errdefer cloned_command.deinit();
+
+        var new_template = try core.models.template.CommandTemplate.init(self.allocator, &self.id_generator, new_name, cloned_command);
+        errdefer new_template.deinit();
+
+        if (source.description) |desc| {
+            try new_template.setDescription(desc);
+        }
+        if (source.category) |category| {
+            try new_template.setCategory(category);
+        }
+        if (!std.mem.eql(u8, new_template.command.name, new_template.name)) {
+            new_template.command.allocator.free(new_template.command.name);
+            new_template.command.name = try new_template.command.allocator.dupe(u8, new_template.name);
+        }
+
+        const insert_idx = @min(idx + 1, self.templates.items.len);
+        try self.templates.insert(self.allocator, insert_idx, new_template);
+        try persistence.saveTemplates(self.allocator, self.templates.items, self.templates_folders.items);
+    }
+
+    fn makeTemplateCopyName(self: *App, base: []const u8) ![]u8 {
+        var idx: usize = 1;
+        while (true) : (idx += 1) {
+            const candidate = if (idx == 1)
+                try std.fmt.allocPrint(self.allocator, "{s} Copy", .{base})
+            else
+                try std.fmt.allocPrint(self.allocator, "{s} Copy {d}", .{ base, idx });
+            if (!self.templateNameExists(candidate)) {
+                return candidate;
+            }
+            self.allocator.free(candidate);
+        }
+    }
+
+    fn templateNameExists(self: *App, name: []const u8) bool {
+        for (self.templates.items) |template| {
+            if (std.mem.eql(u8, template.name, name)) return true;
+        }
+        return false;
     }
 
     fn hasTemplateFolder(self: *App, name: []const u8) bool {
