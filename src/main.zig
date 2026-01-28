@@ -139,6 +139,20 @@ fn handleEvent(
                     }
                 }
             }
+            if (app.ui.command_copy_rect) |rect| {
+                if (rect.contains(mouse.col, mouse.row)) {
+                    switch (mouse.button) {
+                        .left => {
+                            if (mouse.type == .press) {
+                                const preview = app.buildCommandPreview(allocator) catch return;
+                                defer allocator.free(preview);
+                                if (vx.copyToSystemClipboard(tty, preview, allocator)) |_| {} else |_| {}
+                            }
+                        },
+                        else => {},
+                    }
+                }
+            }
         },
         else => {},
     }

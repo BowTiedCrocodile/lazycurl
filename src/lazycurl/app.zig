@@ -190,6 +190,7 @@ pub const UiState = struct {
     output_follow: bool = false,
     output_rect: ?PanelRect = null,
     output_copy_rect: ?PanelRect = null,
+    command_copy_rect: ?PanelRect = null,
     output_copy_until_ms: i64 = 0,
     body_mode: BodyEditMode = .insert,
     import_source: ImportSource = .paste,

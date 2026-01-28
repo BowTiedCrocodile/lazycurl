@@ -150,6 +150,7 @@ pub fn render(
 
 
     const command_preview = try app.buildCommandPreview(allocator);
+    app.ui.command_copy_rect = null;
 
     const command_w: u16 = if (width > left_w) width - left_w else 0;
     if (command_w > 0 and command_display_h > 0) {
@@ -160,7 +161,7 @@ pub fn render(
             .height = command_display_h,
             .border = .{ .where = .none },
         });
-        components.command_display.render(allocator, command_win, command_preview, theme);
+        components.command_display.render(allocator, command_win, app, command_preview, theme);
     }
 
     if (command_w > 0 and output_h > 0) {
