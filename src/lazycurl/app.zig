@@ -222,6 +222,34 @@ pub const TemplateRow = struct {
     collapsed: bool = false,
 };
 
+const DeletedTemplate = struct {
+    template: core.models.template.CommandTemplate,
+    index: usize,
+};
+
+const DeletedFolder = struct {
+    name: []u8,
+    index: usize,
+    template_ids: []u64,
+};
+
+const UndoEntry = union(enum) {
+    template: DeletedTemplate,
+    folder: DeletedFolder,
+
+    fn deinit(self: *UndoEntry, allocator: std.mem.Allocator) void {
+        switch (self.*) {
+            .template => |*item| {
+                item.template.deinit();
+            },
+            .folder => |*item| {
+                allocator.free(item.name);
+                allocator.free(item.template_ids);
+            },
+        }
+    }
+};
+
 pub const PanelRect = struct {
     x: i17,
     y: i17,
@@ -287,6 +315,7 @@ pub const App = struct {
     history_results: std.ArrayList(?execution.executor.ExecutionResult),
     pending_history_command: ?core.models.command.CurlCommand = null,
     current_environment_index: usize = 0,
+    undo_stack: std.ArrayList(UndoEntry),
 
     pub fn init(allocator: std.mem.Allocator) !App {
         var generator = core.IdGenerator{};
@@ -304,6 +333,7 @@ pub const App = struct {
         const import_path_input = try text_input.TextInput.init(allocator);
         const import_url_input = try text_input.TextInput.init(allocator);
         const import_new_folder_input = try text_input.TextInput.init(allocator);
+        const undo_stack = try std.ArrayList(UndoEntry).initCapacity(allocator, 0);
 
         return .{
             .allocator = allocator,
@@ -315,6 +345,7 @@ pub const App = struct {
             .environments = environments,
             .history = history,
             .history_results = history_results,
+            .undo_stack = undo_stack,
             .ui = .{
                 .edit_input = edit_input,
                 .body_input = body_input,
@@ -339,6 +370,10 @@ pub const App = struct {
             }
         }
         self.history_results.deinit(self.allocator);
+        for (self.undo_stack.items) |*entry| {
+            entry.deinit(self.allocator);
+        }
+        self.undo_stack.deinit(self.allocator);
         if (self.pending_history_command) |*command| {
             command.deinit();
         }
@@ -403,15 +438,11 @@ pub const App = struct {
                 return false;
             }
         }
-        if (input.code == .f6) {
+        if (input.code == .delete) {
             if (self.ui.left_panel != null and self.ui.left_panel.? == .templates) {
-                if (try self.selectedTemplateRow()) |row| {
-                    if (row.kind == .folder) {
-                        try self.deleteTemplateFolder(row.category);
-                        self.ensureTemplateSelection();
-                        return false;
-                    }
-                }
+                try self.deleteSelectedTemplateOrFolder();
+                self.ensureTemplateSelection();
+                return false;
             }
         }
         if (input.mods.ctrl) {
@@ -438,6 +469,11 @@ pub const App = struct {
                     if (ch == 'h') {
                         self.ui.history_expanded = !self.ui.history_expanded;
                         self.focusLeftPanel(.history);
+                        return false;
+                    }
+                    if (ch == 'z') {
+                        try self.undoDelete();
+                        self.ensureTemplateSelection();
                         return false;
                     }
                 },
@@ -2002,12 +2038,14 @@ pub const App = struct {
         _ = self.templates_collapsed.remove(from);
     }
 
-    fn deleteTemplateFolder(self: *App, name: []const u8) !void {
+    fn deleteTemplateFolder(self: *App, name: []const u8) !usize {
         var idx: usize = 0;
+        var removed_index: ?usize = null;
         while (idx < self.templates_folders.items.len) : (idx += 1) {
             if (std.mem.eql(u8, self.templates_folders.items[idx], name)) {
                 const removed = self.templates_folders.orderedRemove(idx);
                 self.allocator.free(removed);
+                removed_index = idx;
                 break;
             }
         }
@@ -2022,6 +2060,103 @@ pub const App = struct {
         }
         _ = self.templates_collapsed.remove(name);
         try persistence.saveTemplates(self.allocator, self.templates.items, self.templates_folders.items);
+        return removed_index orelse 0;
+    }
+
+    fn deleteTemplate(self: *App, idx: usize) !core.models.template.CommandTemplate {
+        if (idx >= self.templates.items.len) return error.InvalidTemplateIndex;
+        return self.templates.orderedRemove(idx);
+    }
+
+    fn deleteSelectedTemplateOrFolder(self: *App) !void {
+        if (try self.selectedTemplateRow()) |row| {
+            switch (row.kind) {
+                .template => if (row.template_index) |idx| {
+                    try self.deleteTemplateWithUndo(idx);
+                },
+                .folder => {
+                    try self.deleteFolderWithUndo(row.category);
+                },
+            }
+        }
+    }
+
+    fn deleteTemplateWithUndo(self: *App, idx: usize) !void {
+        var removed = try self.deleteTemplate(idx);
+        errdefer removed.deinit();
+        try self.pushUndo(.{ .template = .{ .template = removed, .index = idx } });
+        try persistence.saveTemplates(self.allocator, self.templates.items, self.templates_folders.items);
+    }
+
+    fn deleteFolderWithUndo(self: *App, name: []const u8) !void {
+        const name_copy = try self.allocator.dupe(u8, name);
+        errdefer self.allocator.free(name_copy);
+
+        var ids = try std.ArrayList(u64).initCapacity(self.allocator, 0);
+        defer ids.deinit(self.allocator);
+        for (self.templates.items) |template| {
+            if (template.category) |category| {
+                if (std.mem.eql(u8, category, name)) {
+                    try ids.append(self.allocator, template.id);
+                }
+            }
+        }
+        const id_slice = try ids.toOwnedSlice(self.allocator);
+        errdefer self.allocator.free(id_slice);
+
+        const removed_index = try self.deleteTemplateFolder(name);
+        try self.pushUndo(.{ .folder = .{ .name = name_copy, .index = removed_index, .template_ids = id_slice } });
+    }
+
+    fn undoDelete(self: *App) !void {
+        if (self.undo_stack.items.len == 0) return;
+        const entry = self.undo_stack.pop() orelse return;
+        errdefer {
+            var entry_mut = entry;
+            entry_mut.deinit(self.allocator);
+        }
+        switch (entry) {
+            .template => |item| {
+                if (item.template.category) |category| {
+                    if (!self.hasTemplateFolder(category)) {
+                        try self.templates_folders.append(self.allocator, try self.allocator.dupe(u8, category));
+                    }
+                }
+                const idx = @min(item.index, self.templates.items.len);
+                try self.templates.insert(self.allocator, idx, item.template);
+                try persistence.saveTemplates(self.allocator, self.templates.items, self.templates_folders.items);
+            },
+            .folder => |item| {
+                if (!self.hasTemplateFolder(item.name)) {
+                    const idx = @min(item.index, self.templates_folders.items.len);
+                    try self.templates_folders.insert(self.allocator, idx, try self.allocator.dupe(u8, item.name));
+                }
+                for (item.template_ids) |template_id| {
+                    if (self.findTemplateIndexById(template_id)) |tidx| {
+                        try self.templates.items[tidx].setCategory(item.name);
+                    }
+                }
+                try persistence.saveTemplates(self.allocator, self.templates.items, self.templates_folders.items);
+                var entry_mut = entry;
+                entry_mut.deinit(self.allocator);
+            },
+        }
+    }
+
+    fn findTemplateIndexById(self: *App, id: u64) ?usize {
+        for (self.templates.items, 0..) |template, idx| {
+            if (template.id == id) return idx;
+        }
+        return null;
+    }
+
+    fn pushUndo(self: *App, entry: UndoEntry) !void {
+        const max_depth: usize = 10;
+        if (self.undo_stack.items.len >= max_depth) {
+            var oldest = self.undo_stack.orderedRemove(0);
+            oldest.deinit(self.allocator);
+        }
+        try self.undo_stack.append(self.allocator, entry);
     }
 
     fn hasTemplateFolder(self: *App, name: []const u8) bool {

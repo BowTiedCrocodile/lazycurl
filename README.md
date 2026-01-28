@@ -112,7 +112,8 @@ Templates panel (focused)
 - `F2` Rename template or folder
 - `F3` Save template from current command
 - `F4` New folder
-- `F6` Delete folder
+- `Delete` Remove selected template or folder
+- `Ctrl+Z` Undo delete (last 10)
 
 ### Basic Workflow
 
