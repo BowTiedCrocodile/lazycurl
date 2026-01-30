@@ -94,7 +94,7 @@ pub fn importTemplatesFromJson(
             if (operation_obj.get("parameters")) |params_value| {
                 try applyParameters(allocator, generator, &command, params_value);
             }
-            try applyRequestBodyHeaders(generator, &command, operation_obj, root_obj);
+            try applyRequestBody(allocator, generator, &command, operation_obj, root_obj, &root, path_parameters);
 
             var template = try template_model.CommandTemplate.init(allocator, generator, name_value.value, command);
             if (category) |folder| {
@@ -245,32 +245,341 @@ fn applyParameters(
     }
 }
 
-fn applyRequestBodyHeaders(
+fn applyRequestBody(
+    allocator: Allocator,
     generator: *ids.IdGenerator,
     command: *command_model.CurlCommand,
     operation_obj: ObjectMap,
     root_obj: ObjectMap,
+    root_value: *const JsonValue,
+    path_parameters: ?JsonValue,
 ) !void {
     if (operation_obj.get("requestBody")) |request_body_value| {
-        if (request_body_value == .object) {
-            if (request_body_value.object.get("content")) |content_value| {
-                if (content_value == .object) {
-                    var iter = content_value.object.iterator();
-                    if (iter.next()) |entry| {
-                        const content_type = entry.key_ptr.*;
-                        try ensureHeader(generator, command, "Content-Type", content_type);
-                        return;
+        if (try applyOpenApiRequestBody(allocator, generator, command, request_body_value, root_value)) return;
+    }
+    if (operation_obj.get("parameters")) |params_value| {
+        _ = try applySwaggerBodyFromParameters(allocator, command, params_value, root_value);
+    }
+    if (path_parameters) |params_value| {
+        _ = try applySwaggerBodyFromParameters(allocator, command, params_value, root_value);
+    }
+
+    if (operation_obj.get("consumes")) |consumes_value| {
+        _ = try applyConsumesHeader(generator, command, consumes_value);
+    } else if (root_obj.get("consumes")) |consumes_value| {
+        _ = try applyConsumesHeader(generator, command, consumes_value);
+    }
+}
+
+fn applyOpenApiRequestBody(
+    allocator: Allocator,
+    generator: *ids.IdGenerator,
+    command: *command_model.CurlCommand,
+    request_body_value: JsonValue,
+    root_value: *const JsonValue,
+) !bool {
+    if (request_body_value != .object) return false;
+    const request_obj = request_body_value.object;
+    const content_value = request_obj.get("content") orelse return true;
+    if (content_value != .object) return true;
+
+    var iter = content_value.object.iterator();
+    const entry = iter.next() orelse return true;
+    const content_type = entry.key_ptr.*;
+    try ensureHeader(generator, command, "Content-Type", content_type);
+
+    const media_value = entry.value_ptr.*;
+    const body = try extractOpenApiBodyExample(allocator, media_value, root_value);
+    if (body) |payload| {
+        command.setBody(.{ .raw = payload });
+    }
+    return true;
+}
+
+fn extractOpenApiBodyExample(allocator: Allocator, media_value: JsonValue, root_value: *const JsonValue) !?[]u8 {
+    if (media_value != .object) return null;
+    const media_obj = media_value.object;
+
+    if (media_obj.get("example")) |example_value| {
+        return try stringifyExample(allocator, example_value);
+    }
+    if (media_obj.get("examples")) |examples_value| {
+        if (examples_value == .object) {
+            var iter = examples_value.object.iterator();
+            if (iter.next()) |entry| {
+                const example_value = entry.value_ptr.*;
+                if (example_value == .object) {
+                    if (example_value.object.get("value")) |value| {
+                        return try stringifyExample(allocator, value);
+                    }
+                    if (example_value.object.get("example")) |value| {
+                        return try stringifyExample(allocator, value);
                     }
                 }
+                return try stringifyExample(allocator, example_value);
+            }
+        }
+    }
+    if (media_obj.get("schema")) |schema_value| {
+        return try extractSchemaExample(allocator, schema_value, root_value, 0);
+    }
+    return null;
+}
+
+fn applySwaggerBodyFromParameters(
+    allocator: Allocator,
+    command: *command_model.CurlCommand,
+    params_value: JsonValue,
+    root_value: *const JsonValue,
+) !bool {
+    if (params_value != .array) return false;
+    for (params_value.array.items) |param_value| {
+        if (param_value != .object) continue;
+        const param_obj = param_value.object;
+        const loc_value = param_obj.get("in") orelse continue;
+        const location = asString(&loc_value) orelse continue;
+        if (!std.ascii.eqlIgnoreCase(location, "body")) continue;
+        if (try extractSwaggerBodyExample(allocator, param_obj, root_value)) |payload| {
+            command.setBody(.{ .raw = payload });
+        }
+        return true;
+    }
+    return false;
+}
+
+fn extractSwaggerBodyExample(allocator: Allocator, param_obj: ObjectMap, root_value: *const JsonValue) !?[]u8 {
+    if (param_obj.get("example")) |example_value| {
+        return try stringifyExample(allocator, example_value);
+    }
+    if (param_obj.get("x-example")) |example_value| {
+        return try stringifyExample(allocator, example_value);
+    }
+    if (param_obj.get("schema")) |schema_value| {
+        return try extractSchemaExample(allocator, schema_value, root_value, 0);
+    }
+    if (param_obj.get("default")) |default_value| {
+        return try stringifyExample(allocator, default_value);
+    }
+    return null;
+}
+
+fn extractSchemaExample(allocator: Allocator, schema_value: JsonValue, root_value: *const JsonValue, depth: usize) !?[]u8 {
+    if (depth > 4) return null;
+    if (schema_value != .object) return null;
+    if (schema_value.object.get("$ref")) |ref_value| {
+        if (asString(&ref_value)) |ref_str| {
+            if (resolveRef(root_value, ref_str)) |resolved| {
+                return try extractSchemaExample(allocator, resolved, root_value, depth + 1);
+            }
+        }
+    }
+    if (schema_value.object.get("example")) |example_value| {
+        return try stringifyExample(allocator, example_value);
+    }
+    if (schema_value.object.get("default")) |default_value| {
+        return try stringifyExample(allocator, default_value);
+    }
+    if (schema_value.object.get("enum")) |enum_value| {
+        if (enum_value == .array and enum_value.array.items.len > 0) {
+            return try stringifyExample(allocator, enum_value.array.items[0]);
+        }
+    }
+    if (try buildSchemaPlaceholder(allocator, schema_value, root_value, depth + 1)) |payload| {
+        return payload;
+    }
+    return null;
+}
+
+fn buildSchemaPlaceholder(
+    allocator: Allocator,
+    schema_value: JsonValue,
+    root_value: *const JsonValue,
+    depth: usize,
+) error{OutOfMemory}!?[]u8 {
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const arena_alloc = arena.allocator();
+    const value = try buildSchemaPlaceholderValue(arena_alloc, schema_value, root_value, depth) orelse return null;
+    return try std.json.Stringify.valueAlloc(allocator, value, .{});
+}
+
+fn buildSchemaPlaceholderValue(
+    allocator: Allocator,
+    schema_value: JsonValue,
+    root_value: *const JsonValue,
+    depth: usize,
+) error{OutOfMemory}!?JsonValue {
+    if (depth > 4) return null;
+    if (schema_value != .object) return null;
+    const schema_obj = schema_value.object;
+
+    if (schema_obj.get("$ref")) |ref_value| {
+        if (asString(&ref_value)) |ref_str| {
+            if (resolveRef(root_value, ref_str)) |resolved| {
+                return try buildSchemaPlaceholderValue(allocator, resolved, root_value, depth + 1);
             }
         }
     }
 
-    if (operation_obj.get("consumes")) |consumes_value| {
-        if (try applyConsumesHeader(generator, command, consumes_value)) return;
-    } else if (root_obj.get("consumes")) |consumes_value| {
-        _ = try applyConsumesHeader(generator, command, consumes_value);
+    if (schema_obj.get("enum")) |enum_value| {
+        if (enum_value == .array and enum_value.array.items.len > 0) {
+            return enum_value.array.items[0];
+        }
     }
+    if (schema_obj.get("example")) |example_value| {
+        return example_value;
+    }
+    if (schema_obj.get("default")) |default_value| {
+        return default_value;
+    }
+
+    const type_value = schema_obj.get("type");
+    const type_name = if (type_value) |value| asString(&value) else null;
+
+    if (type_name == null) {
+        if (schema_obj.get("properties") != null) {
+            return try buildObjectPlaceholder(allocator, schema_obj, root_value, depth);
+        }
+        if (schema_obj.get("items") != null) {
+            return try buildArrayPlaceholder(allocator, schema_obj.get("items").?, root_value, depth);
+        }
+        return null;
+    }
+
+    if (std.ascii.eqlIgnoreCase(type_name.?, "object")) {
+        return try buildObjectPlaceholder(allocator, schema_obj, root_value, depth);
+    }
+    if (std.ascii.eqlIgnoreCase(type_name.?, "array")) {
+        if (schema_obj.get("items")) |items_value| {
+            return try buildArrayPlaceholder(allocator, items_value, root_value, depth);
+        }
+        return JsonValue{ .array = std.json.Array.init(allocator) };
+    }
+    if (std.ascii.eqlIgnoreCase(type_name.?, "string")) return JsonValue{ .string = "" };
+    if (std.ascii.eqlIgnoreCase(type_name.?, "integer")) return JsonValue{ .integer = 0 };
+    if (std.ascii.eqlIgnoreCase(type_name.?, "number")) return JsonValue{ .float = 0 };
+    if (std.ascii.eqlIgnoreCase(type_name.?, "boolean")) return JsonValue{ .bool = false };
+    return null;
+}
+
+fn buildArrayPlaceholder(
+    allocator: Allocator,
+    items_value: JsonValue,
+    root_value: *const JsonValue,
+    depth: usize,
+) error{OutOfMemory}!?JsonValue {
+    var array = std.json.Array.init(allocator);
+    if (try buildSchemaPlaceholderValue(allocator, items_value, root_value, depth + 1)) |item_value| {
+        try array.append(item_value);
+    }
+    return JsonValue{ .array = array };
+}
+
+fn buildObjectPlaceholder(
+    allocator: Allocator,
+    schema_obj: ObjectMap,
+    root_value: *const JsonValue,
+    depth: usize,
+) error{OutOfMemory}!?JsonValue {
+    const props_value = schema_obj.get("properties") orelse return JsonValue{ .object = ObjectMap.init(allocator) };
+    if (props_value != .object) return JsonValue{ .object = ObjectMap.init(allocator) };
+
+    const required_list = schema_obj.get("required");
+
+    var obj = ObjectMap.init(allocator);
+    var iter = props_value.object.iterator();
+    while (iter.next()) |entry| {
+        const key = entry.key_ptr.*;
+        const prop_value = entry.value_ptr.*;
+        const include = hasPropertyExample(&prop_value) or isPropertyRequired(required_list, key);
+        if (!include) continue;
+        if (try buildSchemaPlaceholderValue(allocator, prop_value, root_value, depth + 1)) |value| {
+            try obj.put(key, value);
+        }
+    }
+
+    if (obj.count() == 0) {
+        var fallback_iter = props_value.object.iterator();
+        if (fallback_iter.next()) |entry| {
+            if (try buildSchemaPlaceholderValue(allocator, entry.value_ptr.*, root_value, depth + 1)) |value| {
+                try obj.put(entry.key_ptr.*, value);
+            }
+        }
+    }
+
+    return JsonValue{ .object = obj };
+}
+
+fn hasPropertyExample(prop_value: *const JsonValue) bool {
+    if (prop_value.* != .object) return false;
+    const obj = prop_value.*.object;
+    return obj.get("example") != null or obj.get("default") != null or obj.get("enum") != null;
+}
+
+fn isPropertyRequired(required_value: ?JsonValue, key: []const u8) bool {
+    if (required_value == null) return false;
+    const value = required_value.?;
+    if (value != .array) return false;
+    for (value.array.items) |item| {
+        if (asString(&item)) |name| {
+            if (std.mem.eql(u8, name, key)) return true;
+        }
+    }
+    return false;
+}
+
+fn resolveRef(root_value: *const JsonValue, ref: []const u8) ?JsonValue {
+    if (ref.len < 2 or ref[0] != '#' or ref[1] != '/') return null;
+    var current: JsonValue = root_value.*;
+    var it = std.mem.splitScalar(u8, ref[2..], '/');
+    while (it.next()) |raw_part| {
+        if (raw_part.len == 0) continue;
+        if (current != .object) return null;
+        var temp_buf: [256]u8 = undefined;
+        const part = if (std.mem.indexOf(u8, raw_part, "~") == null)
+            raw_part
+        else
+            unescapeRefPart(raw_part, &temp_buf) orelse return null;
+        if (current.object.get(part)) |next| {
+            current = next;
+        } else {
+            return null;
+        }
+    }
+    return current;
+}
+
+fn unescapeRefPart(part: []const u8, buf: []u8) ?[]const u8 {
+    if (part.len > buf.len) return null;
+    var out: usize = 0;
+    var i: usize = 0;
+    while (i < part.len) : (i += 1) {
+        if (part[i] == '~' and i + 1 < part.len) {
+            const next = part[i + 1];
+            if (next == '0') {
+                buf[out] = '~';
+                out += 1;
+                i += 1;
+                continue;
+            } else if (next == '1') {
+                buf[out] = '/';
+                out += 1;
+                i += 1;
+                continue;
+            }
+        }
+        buf[out] = part[i];
+        out += 1;
+    }
+    return buf[0..out];
+}
+
+fn stringifyExample(allocator: Allocator, value: JsonValue) !?[]u8 {
+    return switch (value) {
+        .string => |text| try allocator.dupe(u8, text),
+        .number_string => |text| try allocator.dupe(u8, text),
+        .integer, .float, .bool, .null, .object, .array => try std.json.Stringify.valueAlloc(allocator, value, .{}),
+    };
 }
 
 fn applyConsumesHeader(
@@ -348,7 +657,11 @@ test "import openapi 3 templates" {
         \\      "post": {
         \\        "operationId": "createPet",
         \\        "requestBody": {
-        \\          "content": { "application/json": {} }
+        \\          "content": {
+        \\            "application/json": {
+        \\              "example": { "name": "Fluffy", "age": 2 }
+        \\            }
+        \\          }
         \\        }
         \\      }
         \\    }
@@ -364,6 +677,20 @@ test "import openapi 3 templates" {
     try std.testing.expectEqualStrings("List pets", templates.items[0].name);
     try std.testing.expectEqualStrings("https://api.example.com/v1/pets", templates.items[0].command.url);
     try std.testing.expectEqualStrings("createPet", templates.items[1].name);
+    if (templates.items[1].command.body) |body| {
+        switch (body) {
+            .raw => |payload| {
+                const parsed_body = try std.json.parseFromSlice(JsonValue, std.testing.allocator, payload, .{});
+                defer parsed_body.deinit();
+                const obj = parsed_body.value.object;
+                try std.testing.expectEqualStrings("Fluffy", asString(&obj.get("name").?).?);
+                try std.testing.expectEqual(@as(i64, 2), obj.get("age").?.integer);
+            },
+            else => try std.testing.expect(false),
+        }
+    } else {
+        try std.testing.expect(false);
+    }
 }
 
 test "import swagger 2 templates" {
@@ -376,9 +703,16 @@ test "import swagger 2 templates" {
         \\  "schemes": ["https"],
         \\  "paths": {
         \\    "/status": {
-        \\      "get": {
+        \\      "post": {
         \\        "summary": "Status",
-        \\        "consumes": ["application/json"]
+        \\        "consumes": ["application/json"],
+        \\        "parameters": [
+        \\          {
+        \\            "name": "body",
+        \\            "in": "body",
+        \\            "schema": { "example": { "ok": true } }
+        \\          }
+        \\        ]
         \\      }
         \\    }
         \\  }
@@ -391,5 +725,77 @@ test "import swagger 2 templates" {
     }
     try std.testing.expectEqual(@as(usize, 1), templates.items.len);
     try std.testing.expectEqualStrings("https://example.com/api/status", templates.items[0].command.url);
-    try std.testing.expect(templates.items[0].command.method.? == .get);
+    try std.testing.expect(templates.items[0].command.method.? == .post);
+    if (templates.items[0].command.body) |body| {
+        switch (body) {
+            .raw => |payload| {
+                const parsed_body = try std.json.parseFromSlice(JsonValue, std.testing.allocator, payload, .{});
+                defer parsed_body.deinit();
+                const obj = parsed_body.value.object;
+                try std.testing.expect(obj.get("ok").?.bool);
+            },
+            else => try std.testing.expect(false),
+        }
+    } else {
+        try std.testing.expect(false);
+    }
+}
+
+test "import swagger 2 body placeholder from schema properties" {
+    var generator = ids.IdGenerator{};
+    const json =
+        \\{
+        \\  "swagger": "2.0",
+        \\  "host": "example.com",
+        \\  "basePath": "/api",
+        \\  "paths": {
+        \\    "/pets": {
+        \\      "post": {
+        \\        "consumes": ["application/json"],
+        \\        "parameters": [
+        \\          {
+        \\            "in": "body",
+        \\            "name": "body",
+        \\            "schema": {
+        \\              "type": "object",
+        \\              "required": ["name"],
+        \\              "properties": {
+        \\                "name": { "type": "string", "example": "doggie" },
+        \\                "age": { "type": "integer" }
+        \\              }
+        \\            }
+        \\          }
+        \\        ]
+        \\      }
+        \\    }
+        \\  }
+        \\}
+    ;
+    var templates = try importTemplatesFromJson(std.testing.allocator, &generator, json, null);
+    defer {
+        for (templates.items) |*template| template.deinit();
+        templates.deinit(std.testing.allocator);
+    }
+    try std.testing.expectEqual(@as(usize, 1), templates.items.len);
+    var found_header = false;
+    for (templates.items[0].command.headers.items) |header| {
+        if (std.ascii.eqlIgnoreCase(header.key, "Content-Type")) {
+            found_header = true;
+            try std.testing.expectEqualStrings("application/json", header.value);
+        }
+    }
+    try std.testing.expect(found_header);
+    if (templates.items[0].command.body) |body| {
+        switch (body) {
+            .raw => |payload| {
+                const parsed_body = try std.json.parseFromSlice(JsonValue, std.testing.allocator, payload, .{});
+                defer parsed_body.deinit();
+                const obj = parsed_body.value.object;
+                try std.testing.expectEqualStrings("doggie", asString(&obj.get("name").?).?);
+            },
+            else => try std.testing.expect(false),
+        }
+    } else {
+        try std.testing.expect(false);
+    }
 }
