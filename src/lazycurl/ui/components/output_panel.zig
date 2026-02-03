@@ -22,10 +22,8 @@ pub fn render(
     const copy_style = copyLabelStyle(runtime, app, theme);
     const copy_label = if (app.ui.output_copy_until_ms > std.time.milliTimestamp()) "[Copied]" else "[Copy]";
     const stdout_text = runtimeOutput(runtime, .stdout);
-    const stderr_text = runtimeOutput(runtime, .stderr);
 
-    const status_code = parseStatusMarkerInText(stdout_text) orelse parseStatusMarkerInText(stderr_text) orelse
-        parseLastHttpCode(stdout_text) orelse parseLastHttpCode(stderr_text);
+    const status_code = parseStatusMarkerInText(stdout_text) orelse parseLastHttpCode(stdout_text);
     var status_buf: [32]u8 = undefined;
     const status_label = statusBorderLabel(runtime, status_code, &status_buf);
     const status_style = httpStatusStyleFromCode(status_code, theme, runtime.active_job != null);
@@ -55,10 +53,7 @@ pub fn render(
 
     const body_start: u16 = 0;
     const body_height: u16 = inner.height;
-    const stdout_lines = countLines(stdout_text);
-    const stderr_lines = countLines(stderr_text);
-    const stderr_label_lines: usize = if (stderr_lines > 0) 1 else 0;
-    const total_lines = stdout_lines + stderr_lines + stderr_label_lines;
+    const total_lines = countLines(stdout_text);
     const content_width: u16 = inner.width;
     app.updateOutputMetrics(total_lines, body_height);
     if (body_height > 0 and content_width > 0) {
@@ -68,8 +63,6 @@ pub fn render(
             body_start,
             body_height,
             stdout_text,
-            stderr_text,
-            stderr_lines > 0,
             app.ui.output_scroll,
             theme,
             content_width,
@@ -114,7 +107,7 @@ fn bottomLabelRect(win: vaxis.Window, label: []const u8) ?app_mod.PanelRect {
 fn copyLabelStyle(runtime: *app_mod.Runtime, app: *app_mod.App, theme: theme_mod.Theme) vaxis.Style {
     const now_ms = std.time.milliTimestamp();
     const copied = now_ms <= app.ui.output_copy_until_ms;
-    const has_output = runtime.outputBody().len > 0 or runtime.outputError().len > 0;
+    const has_output = runtime.outputBody().len > 0;
     return if (!has_output) theme.muted else if (copied) theme.success else theme.accent;
 }
 
@@ -209,7 +202,8 @@ fn countLines(text: []const u8) usize {
     var count: usize = 0;
     var it = std.mem.splitScalar(u8, text, '\n');
     while (it.next()) |line_raw| {
-        _ = line_raw;
+        const line = std.mem.trim(u8, line_raw, "\r");
+        if (std.mem.startsWith(u8, line, status_marker_prefix)) continue;
         count += 1;
     }
     return count;
@@ -220,8 +214,6 @@ fn drawOutputBody(
     start_row: u16,
     height: u16,
     stdout_text: []const u8,
-    stderr_text: []const u8,
-    has_stderr: bool,
     scroll: usize,
     theme: theme_mod.Theme,
     content_width: u16,
@@ -231,9 +223,6 @@ fn drawOutputBody(
     const max_row = start_row + height;
 
     row = drawSection(win, row, max_row, null, theme.muted, stdout_text, theme.text, &skip, content_width);
-    if (has_stderr and row < max_row) {
-        row = drawSection(win, row, max_row, "Stderr:", theme.muted, stderr_text, theme.error_style, &skip, content_width);
-    }
     return row;
 }
 
@@ -264,6 +253,7 @@ fn drawSection(
     while (it.next()) |line_raw| {
         if (row >= max_row) break;
         const line = std.mem.trim(u8, line_raw, "\r");
+        if (std.mem.startsWith(u8, line, status_marker_prefix)) continue;
         if (skip.* > 0) {
             skip.* -= 1;
             continue;
@@ -285,93 +275,4 @@ fn drawLineClipped(win: vaxis.Window, row: u16, text: []const u8, style: vaxis.S
     const limit: usize = @intCast(max_width);
     const slice = if (text.len > limit) text[0..limit] else text;
     drawLine(win, row, slice, style);
-}
-
-const SanitizedText = struct {
-    text: []const u8,
-    owned: ?[]u8 = null,
-};
-
-fn releaseSanitized(allocator: std.mem.Allocator, sanitized: SanitizedText) void {
-    if (sanitized.owned) |buf| allocator.free(buf);
-}
-
-fn sanitizeOutput(allocator: std.mem.Allocator, text: []const u8) SanitizedText {
-    var needs = !std.unicode.utf8ValidateSlice(text);
-    if (!needs) {
-        for (text) |byte| {
-            if (byte == 0x1b or byte == '\r' or (byte < 0x20 and byte != '\n' and byte != '\t')) {
-                needs = true;
-                break;
-            }
-        }
-    }
-    if (!needs) return .{ .text = text };
-
-    var out = std.ArrayList(u8).empty;
-    var i: usize = 0;
-    while (i < text.len) {
-        const byte = text[i];
-        if (byte == 0x1b) {
-            if (i + 1 < text.len and text[i + 1] == '[') {
-                i += 2;
-                while (i < text.len) : (i += 1) {
-                    const b = text[i];
-                    if (b >= 0x40 and b <= 0x7e) {
-                        i += 1;
-                        break;
-                    }
-                }
-                continue;
-            }
-            if (i + 1 < text.len and text[i + 1] == ']') {
-                i += 2;
-                while (i < text.len) : (i += 1) {
-                    const b = text[i];
-                    if (b == 0x07) {
-                        i += 1;
-                        break;
-                    }
-                    if (b == 0x1b and i + 1 < text.len and text[i + 1] == '\\') {
-                        i += 2;
-                        break;
-                    }
-                }
-                continue;
-            }
-            i += 1;
-            continue;
-        }
-        if (byte == '\r') {
-            _ = out.append(allocator, '\n') catch return .{ .text = text };
-            i += 1;
-            continue;
-        }
-        if (byte < 0x20 and byte != '\n' and byte != '\t') {
-            i += 1;
-            continue;
-        }
-        if (byte < 0x80) {
-            _ = out.append(allocator, byte) catch return .{ .text = text };
-            i += 1;
-            continue;
-        }
-        const len = std.unicode.utf8ByteSequenceLength(byte) catch {
-            _ = out.append(allocator, '?') catch return .{ .text = text };
-            i += 1;
-            continue;
-        };
-        if (i + len > text.len or !std.unicode.utf8ValidateSlice(text[i .. i + len])) {
-            _ = out.append(allocator, '?') catch return .{ .text = text };
-            i += 1;
-            continue;
-        }
-        _ = out.appendSlice(allocator, text[i .. i + len]) catch return .{ .text = text };
-        i += len;
-    }
-    if (out.items.len == 0 and text.len > 0) {
-        return .{ .text = text };
-    }
-    const owned = out.toOwnedSlice(allocator) catch return .{ .text = text };
-    return .{ .text = owned, .owned = owned };
 }

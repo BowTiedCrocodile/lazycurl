@@ -24,16 +24,11 @@ pub fn render(
     const line_edit = std.fmt.allocPrint(allocator, "Edit: {s}", .{edit_value}) catch return;
     drawLine(inner, 1, line_edit, edit_style);
 
-    const env_name = currentEnvironmentName(app);
-    const line_env = std.fmt.allocPrint(allocator, "Env: {s}", .{env_name}) catch return;
-    drawLine(inner, 2, line_env, theme.text);
-
     if (baseAvailable(app)) {
         const right = buildBaseShortcutRows(allocator, inner.width);
         const left_lens = [_]u16{
             @intCast(line_state.len),
             @intCast(line_edit.len),
-            @intCast(line_env.len),
         };
         drawRightLines(inner, right.lines[0..right.len], &left_lens, theme.muted);
     }
@@ -137,15 +132,6 @@ fn editLabel(app: *app_mod.App) []const u8 {
         .template_name => "template name",
         .template_folder => "template folder",
     };
-}
-
-fn currentEnvironmentName(app: *app_mod.App) []const u8 {
-    if (app.environments.items.len == 0) return "none";
-    const index = if (app.current_environment_index < app.environments.items.len)
-        app.current_environment_index
-    else
-        0;
-    return app.environments.items[index].name;
 }
 
 fn baseAvailable(app: *app_mod.App) bool {

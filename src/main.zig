@@ -124,10 +124,8 @@ fn handleEvent(
                                 if (app.ui.output_copy_rect) |copy_rect| {
                                     if (copy_rect.contains(mouse.col, mouse.row)) {
                                         const body = runtime.outputBody();
-                                        const fallback = runtime.outputError();
-                                        const payload = if (body.len > 0) body else fallback;
-                                        if (payload.len > 0) {
-                                            if (vx.copyToSystemClipboard(tty, payload, allocator)) |_| {
+                                        if (body.len > 0) {
+                                            if (vx.copyToSystemClipboard(tty, body, allocator)) |_| {
                                                 app.markOutputCopied();
                                             } else |_| {}
                                         }
