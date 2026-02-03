@@ -21,20 +21,11 @@ pub fn render(
 
     const copy_style = copyLabelStyle(runtime, app, theme);
     const copy_label = if (app.ui.output_copy_until_ms > std.time.milliTimestamp()) "[Copied]" else "[Copy]";
-    const stdout_raw = runtimeOutput(runtime, .stdout);
-    const stderr_raw = runtimeOutput(runtime, .stderr);
-    const stdout_text = sanitizeOutput(allocator, stdout_raw);
-    const stderr_text = sanitizeOutput(allocator, stderr_raw);
-    defer releaseSanitized(allocator, stdout_text);
-    defer releaseSanitized(allocator, stderr_text);
+    const stdout_text = runtimeOutput(runtime, .stdout);
+    const stderr_text = runtimeOutput(runtime, .stderr);
 
-    const stdout_filtered = stripStatusMarker(allocator, stdout_text.text);
-    const stderr_filtered = stripStatusMarker(allocator, stderr_text.text);
-    defer releaseStatusFiltered(allocator, stdout_filtered);
-    defer releaseStatusFiltered(allocator, stderr_filtered);
-
-    const status_code = stdout_filtered.code orelse stderr_filtered.code orelse
-        parseLastHttpCode(stdout_filtered.text) orelse parseLastHttpCode(stderr_filtered.text);
+    const status_code = parseStatusMarkerInText(stdout_text) orelse parseStatusMarkerInText(stderr_text) orelse
+        parseLastHttpCode(stdout_text) orelse parseLastHttpCode(stderr_text);
     var status_buf: [32]u8 = undefined;
     const status_label = statusBorderLabel(runtime, status_code, &status_buf);
     const status_style = httpStatusStyleFromCode(status_code, theme, runtime.active_job != null);
@@ -64,7 +55,10 @@ pub fn render(
 
     const body_start: u16 = 0;
     const body_height: u16 = inner.height;
-    const total_lines = countLines(stdout_filtered.text) + countLines(stderr_filtered.text) + 1;
+    const stdout_lines = countLines(stdout_text);
+    const stderr_lines = countLines(stderr_text);
+    const stderr_label_lines: usize = if (stderr_lines > 0) 1 else 0;
+    const total_lines = stdout_lines + stderr_lines + stderr_label_lines;
     const content_width: u16 = inner.width;
     app.updateOutputMetrics(total_lines, body_height);
     if (body_height > 0 and content_width > 0) {
@@ -73,8 +67,9 @@ pub fn render(
             inner,
             body_start,
             body_height,
-            stdout_filtered.text,
-            stderr_filtered.text,
+            stdout_text,
+            stderr_text,
+            stderr_lines > 0,
             app.ui.output_scroll,
             theme,
             content_width,
@@ -85,12 +80,6 @@ pub fn render(
 const OutputKind = enum { stdout, stderr };
 
 const status_marker_prefix = "__LAZYCURL_HTTP_STATUS__";
-
-const StatusFilteredText = struct {
-    text: []const u8,
-    owned: ?[]u8 = null,
-    code: ?u16 = null,
-};
 
 fn runtimeOutput(runtime: *app_mod.Runtime, kind: OutputKind) []const u8 {
     if (runtime.active_job != null) {
@@ -129,43 +118,14 @@ fn copyLabelStyle(runtime: *app_mod.Runtime, app: *app_mod.App, theme: theme_mod
     return if (!has_output) theme.muted else if (copied) theme.success else theme.accent;
 }
 
-fn releaseStatusFiltered(allocator: std.mem.Allocator, filtered: StatusFilteredText) void {
-    if (filtered.owned) |buf| allocator.free(buf);
-}
-
-fn stripStatusMarker(allocator: std.mem.Allocator, text: []const u8) StatusFilteredText {
-    if (!hasStatusMarkerLine(text, status_marker_prefix)) return .{ .text = text };
-
-    var out = std.ArrayList(u8).empty;
-    defer out.deinit(allocator);
+fn parseStatusMarkerInText(text: []const u8) ?u16 {
     var last_code: ?u16 = null;
-    var first = true;
-
     var it = std.mem.splitScalar(u8, text, '\n');
-    while (it.next()) |line| {
-        if (std.mem.startsWith(u8, line, status_marker_prefix)) {
-            if (parseStatusMarkerLine(line)) |code| last_code = code;
-            continue;
-        }
-        if (!first) {
-            _ = out.append(allocator, '\n') catch return .{ .text = text, .code = last_code };
-        } else {
-            first = false;
-        }
-        _ = out.appendSlice(allocator, line) catch return .{ .text = text, .code = last_code };
+    while (it.next()) |line_raw| {
+        const line = std.mem.trim(u8, line_raw, "\r");
+        if (parseStatusMarkerLine(line)) |code| last_code = code;
     }
-
-    const owned = out.toOwnedSlice(allocator) catch return .{ .text = text, .code = last_code };
-    return .{ .text = owned, .owned = owned, .code = last_code };
-}
-
-fn hasStatusMarkerLine(text: []const u8, marker: []const u8) bool {
-    var idx: usize = 0;
-    while (std.mem.indexOfPos(u8, text, idx, marker)) |pos| {
-        if (pos == 0 or text[pos - 1] == '\n') return true;
-        idx = pos + marker.len;
-    }
-    return false;
+    return last_code;
 }
 
 fn parseStatusMarkerLine(line: []const u8) ?u16 {
@@ -246,9 +206,11 @@ fn statusStyleForCode(code: u16, theme: theme_mod.Theme) vaxis.Style {
 
 fn countLines(text: []const u8) usize {
     if (text.len == 0) return 0;
-    var count: usize = 1;
-    for (text) |byte| {
-        if (byte == '\n') count += 1;
+    var count: usize = 0;
+    var it = std.mem.splitScalar(u8, text, '\n');
+    while (it.next()) |line_raw| {
+        _ = line_raw;
+        count += 1;
     }
     return count;
 }
@@ -259,6 +221,7 @@ fn drawOutputBody(
     height: u16,
     stdout_text: []const u8,
     stderr_text: []const u8,
+    has_stderr: bool,
     scroll: usize,
     theme: theme_mod.Theme,
     content_width: u16,
@@ -268,7 +231,7 @@ fn drawOutputBody(
     const max_row = start_row + height;
 
     row = drawSection(win, row, max_row, null, theme.muted, stdout_text, theme.text, &skip, content_width);
-    if (row < max_row) {
+    if (has_stderr and row < max_row) {
         row = drawSection(win, row, max_row, "Stderr:", theme.muted, stderr_text, theme.error_style, &skip, content_width);
     }
     return row;
@@ -298,8 +261,9 @@ fn drawSection(
     }
 
     var it = std.mem.splitScalar(u8, text, '\n');
-    while (it.next()) |line| {
+    while (it.next()) |line_raw| {
         if (row >= max_row) break;
+        const line = std.mem.trim(u8, line_raw, "\r");
         if (skip.* > 0) {
             skip.* -= 1;
             continue;
@@ -333,11 +297,13 @@ fn releaseSanitized(allocator: std.mem.Allocator, sanitized: SanitizedText) void
 }
 
 fn sanitizeOutput(allocator: std.mem.Allocator, text: []const u8) SanitizedText {
-    var needs = false;
-    for (text) |byte| {
-        if (byte == 0x1b or byte == '\r' or (byte < 0x20 and byte != '\n' and byte != '\t')) {
-            needs = true;
-            break;
+    var needs = !std.unicode.utf8ValidateSlice(text);
+    if (!needs) {
+        for (text) |byte| {
+            if (byte == 0x1b or byte == '\r' or (byte < 0x20 and byte != '\n' and byte != '\t')) {
+                needs = true;
+                break;
+            }
         }
     }
     if (!needs) return .{ .text = text };
@@ -385,8 +351,26 @@ fn sanitizeOutput(allocator: std.mem.Allocator, text: []const u8) SanitizedText 
             i += 1;
             continue;
         }
-        _ = out.append(allocator, byte) catch return .{ .text = text };
-        i += 1;
+        if (byte < 0x80) {
+            _ = out.append(allocator, byte) catch return .{ .text = text };
+            i += 1;
+            continue;
+        }
+        const len = std.unicode.utf8ByteSequenceLength(byte) catch {
+            _ = out.append(allocator, '?') catch return .{ .text = text };
+            i += 1;
+            continue;
+        };
+        if (i + len > text.len or !std.unicode.utf8ValidateSlice(text[i .. i + len])) {
+            _ = out.append(allocator, '?') catch return .{ .text = text };
+            i += 1;
+            continue;
+        }
+        _ = out.appendSlice(allocator, text[i .. i + len]) catch return .{ .text = text };
+        i += len;
+    }
+    if (out.items.len == 0 and text.len > 0) {
+        return .{ .text = text };
     }
     const owned = out.toOwnedSlice(allocator) catch return .{ .text = text };
     return .{ .text = owned, .owned = owned };

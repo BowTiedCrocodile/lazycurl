@@ -18,6 +18,7 @@ pub fn render(
     const shortcuts_h: u16 = 1;
     const total_remaining: u16 = if (height > status_h + shortcuts_h) height - status_h - shortcuts_h else 0;
     const min_main_h: u16 = 11;
+    const min_output_h: u16 = 4;
     var command_display_h: u16 = 4;
     var main_h: u16 = 0;
     var output_h: u16 = 0;
@@ -35,6 +36,14 @@ pub fn render(
             const proposed_main: u16 = @max(min_main_h, (remaining * 6) / 10);
             main_h = @min(remaining, proposed_main);
             output_h = if (remaining > main_h) remaining - main_h else 0;
+        }
+    }
+    if (total_remaining > 0 and total_remaining > command_display_h) {
+        const remaining = total_remaining - command_display_h;
+        const desired_output = @min(remaining, min_output_h);
+        if (output_h < desired_output) {
+            output_h = desired_output;
+            main_h = if (remaining > output_h) remaining - output_h else 0;
         }
     }
 
