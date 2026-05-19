@@ -4,3 +4,8 @@ target
 .zig-cache
 zig-aarch64-macos-0.15.1/*
 zig-out
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+*.db
+.beads-credential-key

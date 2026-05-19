@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "lazycurl",
+  "project_id": "14b82b4d-9b37-4b07-8bdb-1908a3314936"
+}
