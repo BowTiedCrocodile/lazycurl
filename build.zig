@@ -71,6 +71,18 @@ pub fn build(b: *std.Build) void {
         },
     });
 
+    const harness_mod = b.addModule("lazycurl_harness", .{
+        .root_source_file = b.path("src/lazycurl/testing/harness.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "lazycurl_app", .module = app_mod },
+            .{ .name = "lazycurl_execution", .module = execution_mod },
+            .{ .name = "lazycurl_ui", .module = ui_mod },
+            .{ .name = "vaxis", .module = vaxis_mod },
+        },
+    });
+
     _ = b.addModule("lazycurl", .{
         .root_source_file = b.path("src/root.zig"),
         .target = target,
@@ -165,6 +177,20 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
+    const acceptance_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("test/ui_acceptance.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "lazycurl_harness", .module = harness_mod },
+            },
+        }),
+    });
+
+    const acceptance_step = b.step("acceptance", "Run TUI acceptance tests");
+    acceptance_step.dependOn(&b.addRunArtifact(acceptance_tests).step);
+
     const test_step = b.step("test", "Run all unit tests");
     test_step.dependOn(&b.addRunArtifact(core_tests).step);
     test_step.dependOn(&b.addRunArtifact(root_tests).step);
@@ -172,6 +198,7 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&b.addRunArtifact(command_tests).step);
     test_step.dependOn(&b.addRunArtifact(persistence_tests).step);
     test_step.dependOn(&b.addRunArtifact(execution_tests).step);
+    test_step.dependOn(&b.addRunArtifact(acceptance_tests).step);
 
     const fmt_step = b.step("fmt", "Format Zig sources");
     const fmt_cmd = b.addSystemCommand(&.{ "zig", "fmt", "src" });

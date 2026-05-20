@@ -50,6 +50,9 @@ For development, you can use the included helper script to run common Zig tasks:
 # Execute the Zig test suite
 ./dev.sh test
 
+# Run TUI acceptance scenarios
+./dev.sh acceptance
+
 # Format Zig sources
 ./dev.sh fmt
 
@@ -67,6 +70,9 @@ zig build run
 
 # Run tests
 zig build test
+
+# Run TUI acceptance tests
+zig build acceptance
 
 # Format all Zig sources
 zig fmt src

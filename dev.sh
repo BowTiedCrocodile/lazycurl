@@ -3,12 +3,13 @@ set -euo pipefail
 
 usage() {
     cat <<'EOF'
-Usage: ./dev.sh [run|ui|test|fmt|fetch] [-- zig args]
+Usage: ./dev.sh [run|ui|test|acceptance|fmt|fetch] [-- zig args]
 
 Commands:
   run    Compile and run `zig build run`
   ui     Run the libvaxis event loop harness
   test   Execute all Zig tests
+  acceptance Run TUI acceptance tests
   fmt    Format Zig sources via `zig fmt`
   fetch  Download Zig dependencies (libvaxis)
 
@@ -37,6 +38,9 @@ case "$cmd" in
         ;;
     test)
         "$zig_bin" build test
+        ;;
+    acceptance)
+        "$zig_bin" build acceptance
         ;;
     fmt)
         "$zig_bin" build fmt

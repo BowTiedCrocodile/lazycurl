@@ -97,7 +97,7 @@ fn renderInputBox(allocator: std.mem.Allocator, win: vaxis.Window, app: *app_mod
     if (inner.height == 0 or inner.width == 0) return;
     inner.clear();
     switch (app.ui.import_source) {
-        .paste => renderMultilineInput(inner, app, theme, focused),
+        .paste => renderMultilineInput(allocator, inner, app, theme, focused),
         .file => renderSingleLineInput(inner, app.ui.import_path_input.slice(), app.ui.import_path_input.cursor, "Path to swagger.json", theme, focused, app.ui.cursor_visible),
         .url => renderSingleLineInput(inner, app.ui.import_url_input.slice(), app.ui.import_url_input.cursor, "https://example.com/swagger.json", theme, focused, app.ui.cursor_visible),
     }
@@ -120,7 +120,7 @@ fn renderSingleLineInput(
     drawInputLineWithCursor(win, 0, value, cursor, theme.text, cursor_style, focused and cursor_visible);
 }
 
-fn renderMultilineInput(win: vaxis.Window, app: *app_mod.App, theme: theme_mod.Theme, focused: bool) void {
+fn renderMultilineInput(allocator: std.mem.Allocator, win: vaxis.Window, app: *app_mod.App, theme: theme_mod.Theme, focused: bool) void {
     const input = &app.ui.import_spec_input;
     const buffer = input.slice();
     app.ui.import_spec_wrap_width = win.width;
@@ -151,10 +151,9 @@ fn renderMultilineInput(win: vaxis.Window, app: *app_mod.App, theme: theme_mod.T
         app.ui.cursor_visible,
     );
     if (status_row) |row_index| {
-        var info_buf: [64]u8 = undefined;
         const line_no = metrics.cursor_row + 1;
-        const info = std.fmt.bufPrint(
-            &info_buf,
+        const info = std.fmt.allocPrint(
+            allocator,
             "Row {d}/{d}  PgUp/PgDn scroll",
             .{ line_no, total_rows },
         ) catch "";

@@ -26,11 +26,9 @@ pub fn render(
     const stdout_text = app.ui.output_override orelse stdout_raw;
 
     const status_code = parseStatusMarkerInText(stdout_raw) orelse parseLastHttpCode(stdout_raw);
-    var status_buf: [32]u8 = undefined;
-    const status_label = statusBorderLabel(runtime, status_code, &status_buf);
+    const status_label = statusBorderLabel(allocator, runtime, status_code);
     const status_style = httpStatusStyleFromCode(status_code, theme, runtime.active_job != null);
-    var time_buf: [32]u8 = undefined;
-    const time_label = timeBorderLabel(runtime, &time_buf);
+    const time_label = timeBorderLabel(allocator, runtime);
     var right_labels_buf: [2]boxed.RightLabel = undefined;
     var right_count: usize = 0;
     if (status_label.len > 0) {
@@ -65,7 +63,6 @@ pub fn render(
     const content_width: u16 = inner.width;
     app.updateOutputMetrics(total_lines, body_height);
     if (body_height > 0 and content_width > 0) {
-
         _ = drawOutputBody(
             inner,
             body_start,
@@ -190,25 +187,25 @@ fn parseStatusMarkerLine(line: []const u8) ?u16 {
     return std.fmt.parseInt(u16, rest[0..idx], 10) catch null;
 }
 
-fn httpStatusLabelFromCode(code: ?u16, buf: []u8) []const u8 {
+fn httpStatusLabelFromCode(allocator: std.mem.Allocator, code: ?u16) []const u8 {
     if (code) |value| {
-        return std.fmt.bufPrint(buf, "HTTP {d}", .{value}) catch "";
+        return std.fmt.allocPrint(allocator, "HTTP {d}", .{value}) catch "";
     }
     return "";
 }
 
-fn statusBorderLabel(runtime: *app_mod.Runtime, code: ?u16, buf: []u8) []const u8 {
-    if (code != null) return httpStatusLabelFromCode(code, buf);
+fn statusBorderLabel(allocator: std.mem.Allocator, runtime: *app_mod.Runtime, code: ?u16) []const u8 {
+    if (code != null) return httpStatusLabelFromCode(allocator, code);
     if (runtime.active_job != null) return "Status: running";
     if (runtime.last_result != null) return "Status: complete";
     return "";
 }
 
-fn timeBorderLabel(runtime: *app_mod.Runtime, buf: []u8) []const u8 {
+fn timeBorderLabel(allocator: std.mem.Allocator, runtime: *app_mod.Runtime) []const u8 {
     if (runtime.active_job != null) return "";
     const result = runtime.last_result orelse return "";
     const duration_ms = result.duration_ns / std.time.ns_per_ms;
-    return std.fmt.bufPrint(buf, "Time: {d} ms", .{duration_ms}) catch "";
+    return std.fmt.allocPrint(allocator, "Time: {d} ms", .{duration_ms}) catch "";
 }
 
 fn httpStatusStyleFromCode(code: ?u16, theme: theme_mod.Theme, active: bool) vaxis.Style {
