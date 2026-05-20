@@ -13,7 +13,7 @@ pub fn defaultMetadata() AppMetadata {
         .name = "lazycurl",
         .description = "lazycurl - Terminal Visual Curl",
         .version = "0.1.0-dev",
-        .zig_version = "0.15.1",
+        .zig_version = "0.16.0",
         .tui_backend = "libvaxis",
     };
 }

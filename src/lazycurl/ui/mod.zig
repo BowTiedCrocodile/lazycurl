@@ -157,7 +157,6 @@ pub fn render(
         components.url_container.render(allocator, url_win, app, theme);
     }
 
-
     const command_preview = try app.buildCommandPreview(allocator);
     app.ui.command_copy_rect = null;
 

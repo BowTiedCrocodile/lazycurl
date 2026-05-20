@@ -118,7 +118,7 @@ fn renderTemplateList(
                 if (selected and is_editing_folder) {
                     var cursor_style = style;
                     cursor_style.reverse = !style.reverse;
-                    const prefix = std.fmt.allocPrint(allocator, "{s} ", .{ marker }) catch return row;
+                    const prefix = std.fmt.allocPrint(allocator, "{s} ", .{marker}) catch return row;
                     drawInputWithCursor(
                         win,
                         row,
@@ -197,7 +197,7 @@ fn truncate(allocator: std.mem.Allocator, value: []const u8, width: usize) []con
     if (width == 0) return "";
     if (value.len <= width) return value;
     if (width <= 3) return value[0..width];
-    return std.fmt.allocPrint(allocator, "{s}...", .{value[0..width - 3]}) catch "";
+    return std.fmt.allocPrint(allocator, "{s}...", .{value[0 .. width - 3]}) catch "";
 }
 
 fn padOrTrim(allocator: std.mem.Allocator, value: []const u8, width: usize) []const u8 {

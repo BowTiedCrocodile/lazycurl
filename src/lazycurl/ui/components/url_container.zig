@@ -413,7 +413,6 @@ fn drawLineClipped(win: vaxis.Window, row: u16, text: []const u8, style: vaxis.S
     drawLine(win, row, slice, style);
 }
 
-
 const VisibleSlice = struct {
     slice: []const u8,
     cursor_pos: u16,

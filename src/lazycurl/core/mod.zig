@@ -8,6 +8,7 @@ pub const Metadata = metadata.AppMetadata;
 pub const Timestamp = ids.Timestamp;
 pub const IdGenerator = ids.IdGenerator;
 pub const nowTimestamp = ids.nowTimestamp;
+pub const nowMilliseconds = ids.nowMilliseconds;
 
 /// Produce a formatted metadata summary string owned by `allocator`.
 pub fn describe(allocator: std.mem.Allocator) ![]u8 {

@@ -20,7 +20,7 @@ lazycurl (Terminal Visual Curl) is a terminal-based UI application that provides
 
 ### Prerequisites
 
-- Zig 0.15.1 (libvaxis main)
+- Zig 0.16.x (libvaxis main)
 - curl installed on your system
 
 ### Zig Build
@@ -41,7 +41,7 @@ lazycurl (Terminal Visual Curl) is a terminal-based UI application that provides
 
 ## Development
 
-For development, you can use the included helper script to run common Zig tasks:
+For development, you can use the included helper script to run common Zig tasks. The script uses `zig` from `PATH` by default, or `ZIG=/path/to/zig` when set.
 
 ```bash
 # Run the Zig prototype

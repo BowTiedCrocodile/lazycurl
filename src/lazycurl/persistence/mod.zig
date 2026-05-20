@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const core = @import("lazycurl_core");
 
 const Allocator = std.mem.Allocator;
@@ -30,11 +31,16 @@ pub const PersistenceError = error{
 };
 
 pub fn resolvePaths(allocator: Allocator) !StoragePaths {
-    const base_dir = try std.fs.getAppDataDir(allocator, "lazycurl");
+    const base_dir = try resolveBaseDir(allocator);
+    errdefer allocator.free(base_dir);
     const templates_dir = try std.fs.path.join(allocator, &.{ base_dir, "templates" });
+    errdefer allocator.free(templates_dir);
     const environments_dir = try std.fs.path.join(allocator, &.{ base_dir, "environments" });
+    errdefer allocator.free(environments_dir);
     const history_file = try std.fs.path.join(allocator, &.{ base_dir, "history.json" });
+    errdefer allocator.free(history_file);
     const templates_file = try std.fs.path.join(allocator, &.{ base_dir, "templates.json" });
+    errdefer allocator.free(templates_file);
     const environments_file = try std.fs.path.join(allocator, &.{ base_dir, "environments.json" });
 
     return .{
@@ -47,11 +53,47 @@ pub fn resolvePaths(allocator: Allocator) !StoragePaths {
     };
 }
 
+fn resolveBaseDir(allocator: Allocator) ![]u8 {
+    if (try envVarOwned(allocator, "XDG_DATA_HOME")) |xdg_data_home| {
+        defer allocator.free(xdg_data_home);
+        return std.fs.path.join(allocator, &.{ xdg_data_home, "lazycurl" });
+    }
+
+    switch (builtin.os.tag) {
+        .driverkit, .ios, .maccatalyst, .macos, .tvos, .visionos, .watchos => {
+            const home = try requiredEnvVarOwned(allocator, "HOME");
+            defer allocator.free(home);
+            return std.fs.path.join(allocator, &.{ home, "Library", "Application Support", "lazycurl" });
+        },
+        .windows => {
+            const appdata = try requiredEnvVarOwned(allocator, "APPDATA");
+            defer allocator.free(appdata);
+            return std.fs.path.join(allocator, &.{ appdata, "lazycurl" });
+        },
+        else => {
+            const home = try requiredEnvVarOwned(allocator, "HOME");
+            defer allocator.free(home);
+            return std.fs.path.join(allocator, &.{ home, ".local", "share", "lazycurl" });
+        },
+    }
+}
+
+fn requiredEnvVarOwned(allocator: Allocator, comptime name: [:0]const u8) ![]u8 {
+    return try envVarOwned(allocator, name) orelse error.EnvironmentVariableNotFound;
+}
+
+fn envVarOwned(allocator: Allocator, comptime name: [:0]const u8) !?[]u8 {
+    const value = std.c.getenv(name.ptr) orelse return null;
+    const owned = try allocator.dupe(u8, std.mem.span(value));
+    return owned;
+}
+
 pub fn ensureStorageDirs(paths: *const StoragePaths) !void {
-    const cwd = std.fs.cwd();
-    try cwd.makePath(paths.base_dir);
-    try cwd.makePath(paths.templates_dir);
-    try cwd.makePath(paths.environments_dir);
+    const io = defaultIo();
+    const cwd = std.Io.Dir.cwd();
+    try cwd.createDirPath(io, paths.base_dir);
+    try cwd.createDirPath(io, paths.templates_dir);
+    try cwd.createDirPath(io, paths.environments_dir);
 }
 
 pub const TemplateStore = struct {
@@ -63,10 +105,11 @@ pub fn loadTemplates(allocator: Allocator, generator: *core.IdGenerator) !Templa
     var paths = try resolvePaths(allocator);
     defer paths.deinit(allocator);
 
-    const cwd = std.fs.cwd();
-    if (cwd.openFile(paths.templates_file, .{ .mode = .read_only })) |file| {
-        defer file.close();
-        const data = try file.readToEndAlloc(allocator, 1_048_576);
+    const io = defaultIo();
+    const cwd = std.Io.Dir.cwd();
+    if (cwd.openFile(io, paths.templates_file, .{ .mode = .read_only })) |file| {
+        defer file.close(io);
+        const data = try readFileAlloc(allocator, file, 1_048_576);
         defer allocator.free(data);
         return parseTemplatesJson(allocator, generator, data);
     } else |err| switch (err) {
@@ -83,9 +126,10 @@ pub fn loadEnvironments(allocator: Allocator, generator: *core.IdGenerator) !std
     var paths = try resolvePaths(allocator);
     defer paths.deinit(allocator);
 
-    const cwd = std.fs.cwd();
-    if (cwd.openFile(paths.environments_file, .{ .mode = .read_only })) |file| {
-        file.close();
+    const io = defaultIo();
+    const cwd = std.Io.Dir.cwd();
+    if (cwd.openFile(io, paths.environments_file, .{ .mode = .read_only })) |file| {
+        file.close(io);
         return PersistenceError.NotImplemented;
     } else |err| switch (err) {
         error.FileNotFound => return seedEnvironments(allocator, generator),
@@ -97,9 +141,10 @@ pub fn loadHistory(allocator: Allocator) !std.ArrayList(CurlCommand) {
     var paths = try resolvePaths(allocator);
     defer paths.deinit(allocator);
 
-    const cwd = std.fs.cwd();
-    if (cwd.openFile(paths.history_file, .{ .mode = .read_only })) |file| {
-        file.close();
+    const io = defaultIo();
+    const cwd = std.Io.Dir.cwd();
+    if (cwd.openFile(io, paths.history_file, .{ .mode = .read_only })) |file| {
+        file.close(io);
         return PersistenceError.NotImplemented;
     } else |err| switch (err) {
         error.FileNotFound => return std.ArrayList(CurlCommand).initCapacity(allocator, 0),
@@ -111,9 +156,10 @@ pub fn saveTemplates(allocator: Allocator, templates: []const CommandTemplate, f
     var paths = try resolvePaths(allocator);
     defer paths.deinit(allocator);
     try ensureStorageDirs(&paths);
-    const cwd = std.fs.cwd();
-    var file = try cwd.createFile(paths.templates_file, .{ .truncate = true });
-    defer file.close();
+    const io = defaultIo();
+    const cwd = std.Io.Dir.cwd();
+    var file = try cwd.createFile(io, paths.templates_file, .{ .truncate = true });
+    defer file.close(io);
 
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
@@ -121,9 +167,22 @@ pub fn saveTemplates(allocator: Allocator, templates: []const CommandTemplate, f
 
     const payload = try buildTemplatesJson(arena_alloc, templates, folders);
     var buffer: [4096]u8 = undefined;
-    var writer = file.writer(&buffer);
+    var writer = file.writer(io, &buffer);
     try std.json.Stringify.value(payload, .{ .whitespace = .indent_2 }, &writer.interface);
     try writer.end();
+}
+
+fn defaultIo() std.Io {
+    return std.Options.debug_io;
+}
+
+fn readFileAlloc(allocator: Allocator, file: std.Io.File, limit: usize) ![]u8 {
+    var buffer: [4096]u8 = undefined;
+    var reader = file.reader(defaultIo(), &buffer);
+    return reader.interface.allocRemaining(allocator, .limited(limit)) catch |err| switch (err) {
+        error.ReadFailed => return reader.err.?,
+        else => |e| return e,
+    };
 }
 
 pub fn saveEnvironments(allocator: Allocator, environments: []const Environment) !void {

@@ -156,6 +156,6 @@ pub const Harness = struct {
 };
 
 fn trimRightOwned(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
-    const trimmed = std.mem.trimRight(u8, input, " ");
+    const trimmed = std.mem.trimEnd(u8, input, " ");
     return allocator.dupe(u8, trimmed);
 }

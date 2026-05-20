@@ -21,7 +21,7 @@ pub fn render(
     app.ui.output_format_rect = null;
 
     const copy_style = copyLabelStyle(runtime, app, theme);
-    const copy_label = if (app.ui.output_copy_until_ms > std.time.milliTimestamp()) "[Copied]" else "[Copy]";
+    const copy_label = if (app.ui.output_copy_until_ms > app_mod.nowMilliseconds()) "[Copied]" else "[Copy]";
     const stdout_raw = runtimeOutput(runtime, .stdout);
     const stdout_text = app.ui.output_override orelse stdout_raw;
 
@@ -162,7 +162,7 @@ fn drawBottomLabel(
 }
 
 fn copyLabelStyle(runtime: *app_mod.Runtime, app: *app_mod.App, theme: theme_mod.Theme) vaxis.Style {
-    const now_ms = std.time.milliTimestamp();
+    const now_ms = app_mod.nowMilliseconds();
     const copied = now_ms <= app.ui.output_copy_until_ms;
     const has_output = runtime.outputBody().len > 0;
     return if (!has_output) theme.muted else if (copied) theme.success else theme.accent;

@@ -481,12 +481,12 @@ fn buildObjectPlaceholder(
     root_value: *const JsonValue,
     depth: usize,
 ) error{OutOfMemory}!?JsonValue {
-    const props_value = schema_obj.get("properties") orelse return JsonValue{ .object = ObjectMap.init(allocator) };
-    if (props_value != .object) return JsonValue{ .object = ObjectMap.init(allocator) };
+    const props_value = schema_obj.get("properties") orelse return JsonValue{ .object = .empty };
+    if (props_value != .object) return JsonValue{ .object = .empty };
 
     const required_list = schema_obj.get("required");
 
-    var obj = ObjectMap.init(allocator);
+    var obj: ObjectMap = .empty;
     var iter = props_value.object.iterator();
     while (iter.next()) |entry| {
         const key = entry.key_ptr.*;
@@ -494,7 +494,7 @@ fn buildObjectPlaceholder(
         const include = hasPropertyExample(&prop_value) or isPropertyRequired(required_list, key);
         if (!include) continue;
         if (try buildSchemaPlaceholderValue(allocator, prop_value, root_value, depth + 1)) |value| {
-            try obj.put(key, value);
+            try obj.put(allocator, key, value);
         }
     }
 
@@ -502,7 +502,7 @@ fn buildObjectPlaceholder(
         var fallback_iter = props_value.object.iterator();
         if (fallback_iter.next()) |entry| {
             if (try buildSchemaPlaceholderValue(allocator, entry.value_ptr.*, root_value, depth + 1)) |value| {
-                try obj.put(entry.key_ptr.*, value);
+                try obj.put(allocator, entry.key_ptr.*, value);
             }
         }
     }

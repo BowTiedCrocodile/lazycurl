@@ -3,7 +3,11 @@ const std = @import("std");
 pub const Timestamp = i64;
 
 pub fn nowTimestamp() Timestamp {
-    return std.time.timestamp();
+    return std.Io.Clock.real.now(std.Options.debug_io).toSeconds();
+}
+
+pub fn nowMilliseconds() i64 {
+    return std.Io.Clock.awake.now(std.Options.debug_io).toMilliseconds();
 }
 
 pub const IdGenerator = struct {

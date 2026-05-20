@@ -1,6 +1,8 @@
 const std = @import("std");
 
 const Allocator = std.mem.Allocator;
+const MultiReader = std.Io.File.MultiReader;
+const MultiReaderBuffer = MultiReader.Buffer(2);
 
 pub const Stream = enum { stdout, stderr };
 pub const OutputHandler = *const fn (ctx: ?*anyopaque, stream: Stream, chunk: []const u8) void;
@@ -39,9 +41,39 @@ pub const ExecutionError = error{
 
 pub const CommandExecutor = struct {
     allocator: Allocator,
+    io_source: IoSource,
+
+    const IoSource = union(enum) {
+        owned: std.Io.Threaded,
+        borrowed: std.Io,
+    };
 
     pub fn init(allocator: Allocator) CommandExecutor {
-        return .{ .allocator = allocator };
+        return .{
+            .allocator = allocator,
+            .io_source = .{ .owned = std.Io.Threaded.init(allocator, .{}) },
+        };
+    }
+
+    pub fn initWithIo(allocator: Allocator, borrowed_io: std.Io) CommandExecutor {
+        return .{
+            .allocator = allocator,
+            .io_source = .{ .borrowed = borrowed_io },
+        };
+    }
+
+    pub fn deinit(self: *CommandExecutor) void {
+        switch (self.io_source) {
+            .owned => |*io_threaded| io_threaded.deinit(),
+            .borrowed => {},
+        }
+    }
+
+    fn activeIo(self: *CommandExecutor) std.Io {
+        return switch (self.io_source) {
+            .owned => |*io_threaded| io_threaded.io(),
+            .borrowed => |borrowed_io| borrowed_io,
+        };
     }
 
     pub fn start(self: *CommandExecutor, command: []const u8) !ExecutionJob {
@@ -53,29 +85,36 @@ pub const CommandExecutor = struct {
             return ExecutionError.InvalidCommand;
         }
 
-        var child = std.process.Child.init(argv, self.allocator);
-        child.stdin_behavior = .Ignore;
-        child.stdout_behavior = .Pipe;
-        child.stderr_behavior = .Pipe;
-        child.expand_arg0 = .expand;
+        const io_instance = self.activeIo();
+        var child = std.process.spawn(io_instance, .{
+            .argv = argv,
+            .stdin = .ignore,
+            .stdout = .pipe,
+            .stderr = .pipe,
+            .expand_arg0 = .expand,
+        }) catch return ExecutionError.SpawnFailed;
+        errdefer child.kill(io_instance);
 
-        child.spawn() catch return ExecutionError.SpawnFailed;
-
-        const poller = std.Io.poll(self.allocator, Stream, .{
-            .stdout = child.stdout.?,
-            .stderr = child.stderr.?,
+        const multi_reader_buffer = try self.allocator.create(MultiReaderBuffer);
+        errdefer self.allocator.destroy(multi_reader_buffer);
+        var multi_reader: MultiReader = undefined;
+        multi_reader.init(self.allocator, io_instance, multi_reader_buffer.toStreams(), &.{
+            child.stdout.?,
+            child.stderr.?,
         });
 
-        const started_at = std.time.Instant.now() catch null;
+        const started_at = std.Io.Clock.awake.now(io_instance).toNanoseconds();
         return .{
             .allocator = self.allocator,
+            .io = io_instance,
             .command = try self.allocator.dupe(u8, command),
             .argv_storage = argv_storage,
             .child = child,
-            .poller = poller,
+            .multi_reader_buffer = multi_reader_buffer,
+            .multi_reader = multi_reader,
             .stdout = try std.ArrayList(u8).initCapacity(self.allocator, 0),
             .stderr = try std.ArrayList(u8).initCapacity(self.allocator, 0),
-            .start = started_at,
+            .start_ns = started_at,
         };
     }
 
@@ -92,30 +131,46 @@ pub const CommandExecutor = struct {
 
 pub const ExecutionJob = struct {
     allocator: Allocator,
+    io: std.Io,
     command: []u8,
     argv_storage: std.ArrayList([]const u8),
     child: std.process.Child,
-    poller: std.Io.Poller(Stream),
+    multi_reader_buffer: *MultiReaderBuffer,
+    multi_reader: MultiReader,
     stdout: std.ArrayList(u8),
     stderr: std.ArrayList(u8),
-    start: ?std.time.Instant,
+    start_ns: i96,
     term: ?std.process.Child.Term = null,
     done: bool = false,
 
     pub fn poll(self: *ExecutionJob, timeout_ns: u64, sink: ?OutputSink) !bool {
         if (self.done) return true;
 
-        if (try self.poller.pollTimeout(timeout_ns)) {
-            self.flushStream(.stdout, sink);
-            self.flushStream(.stderr, sink);
-            return false;
-        }
+        const timeout: std.Io.Timeout = .{
+            .duration = std.Io.Clock.Duration{
+                .clock = .awake,
+                .raw = std.Io.Duration.fromNanoseconds(@intCast(timeout_ns)),
+            },
+        };
+        self.multi_reader.fill(1, timeout) catch |err| switch (err) {
+            error.Timeout => {
+                self.flushStream(.stdout, sink);
+                self.flushStream(.stderr, sink);
+                return false;
+            },
+            error.EndOfStream => {
+                self.flushStream(.stdout, sink);
+                self.flushStream(.stderr, sink);
+                self.term = try self.child.wait(self.io);
+                self.done = true;
+                return true;
+            },
+            else => |e| return e,
+        };
 
         self.flushStream(.stdout, sink);
         self.flushStream(.stderr, sink);
-        self.term = try self.child.wait();
-        self.done = true;
-        return true;
+        return false;
     }
 
     pub fn finish(self: *ExecutionJob) !ExecutionResult {
@@ -125,10 +180,9 @@ pub const ExecutionJob = struct {
             }
         }
 
-        const duration = if (self.start) |start| blk: {
-            const end = std.time.Instant.now() catch break :blk 0;
-            break :blk end.since(start);
-        } else 0;
+        const end_ns = std.Io.Clock.awake.now(self.io).toNanoseconds();
+        const elapsed_ns = @max(0, end_ns - self.start_ns);
+        const duration: u64 = @intCast(elapsed_ns);
 
         const command_owned = self.command;
         self.command = &.{};
@@ -137,7 +191,7 @@ pub const ExecutionJob = struct {
         var exit_code: ?u8 = null;
         if (self.term) |term| {
             switch (term) {
-                .Exited => |code| {
+                .exited => |code| {
                     exit_code = code;
                     if (code != 0) {
                         error_message = try std.fmt.allocPrint(self.allocator, "Command failed with exit code {d}: {s}", .{
@@ -146,13 +200,13 @@ pub const ExecutionJob = struct {
                         });
                     }
                 },
-                .Signal => |sig| {
+                .signal => |sig| {
                     error_message = try std.fmt.allocPrint(self.allocator, "Process terminated by signal {d}", .{sig});
                 },
-                .Stopped => |sig| {
+                .stopped => |sig| {
                     error_message = try std.fmt.allocPrint(self.allocator, "Process stopped by signal {d}", .{sig});
                 },
-                .Unknown => |code| {
+                .unknown => |code| {
                     error_message = try std.fmt.allocPrint(self.allocator, "Process terminated with status {d}", .{code});
                 },
             }
@@ -169,7 +223,7 @@ pub const ExecutionJob = struct {
     }
 
     fn flushStream(self: *ExecutionJob, stream: Stream, sink: ?OutputSink) void {
-        const reader = self.poller.reader(stream);
+        const reader = self.multi_reader.reader(streamIndex(stream));
         const buffered = reader.buffered();
         if (buffered.len == 0) return;
 
@@ -186,7 +240,11 @@ pub const ExecutionJob = struct {
     }
 
     pub fn deinit(self: *ExecutionJob) void {
-        self.poller.deinit();
+        self.multi_reader.deinit();
+        self.allocator.destroy(self.multi_reader_buffer);
+        if (!self.done and self.child.id != null) {
+            self.child.kill(self.io);
+        }
         self.stdout.deinit(self.allocator);
         self.stderr.deinit(self.allocator);
         freeArgv(self.allocator, &self.argv_storage);
@@ -195,6 +253,13 @@ pub const ExecutionJob = struct {
         }
     }
 };
+
+fn streamIndex(stream: Stream) usize {
+    return switch (stream) {
+        .stdout => 0,
+        .stderr => 1,
+    };
+}
 
 fn freeArgv(allocator: Allocator, argv: *std.ArrayList([]const u8)) void {
     for (argv.items) |arg| {

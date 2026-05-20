@@ -2,7 +2,8 @@
 target
 
 .zig-cache
-zig-aarch64-macos-0.15.1/*
+zig-aarch64-macos-*/
+zig-pkg/
 zig-out
 
 # Beads / Dolt files (added by bd init)

@@ -5,34 +5,27 @@ const ui = @import("lazycurl_ui");
 
 const Event = vaxis.Event;
 
-pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer {
-        const leaked = gpa.deinit();
-        if (leaked == .leak) std.log.warn("memory leaked during shutdown", .{});
-    }
-
-    const allocator = gpa.allocator();
-
+pub fn main(init: std.process.Init) !void {
+    const allocator = init.gpa;
     var app = try app_mod.App.init(allocator);
     defer app.deinit();
 
-    var runtime = try app_mod.Runtime.init(allocator);
+    var runtime = try app_mod.Runtime.initWithIo(allocator, init.io);
     defer runtime.deinit();
 
     var tty_buffer: [1024]u8 = undefined;
-    var tty = try vaxis.Tty.init(&tty_buffer);
+    var tty = try vaxis.Tty.init(init.io, &tty_buffer);
     defer tty.deinit();
 
-    var vx = try vaxis.init(allocator, .{
+    var vx = try vaxis.init(init.io, allocator, init.environ_map, .{
         .system_clipboard_allocator = allocator,
         .kitty_keyboard_flags = .{ .report_events = true },
     });
     defer vx.deinit(allocator, tty.writer());
 
-    var loop: vaxis.Loop(Event) = .{ .tty = &tty, .vaxis = &vx };
+    var loop: vaxis.Loop(Event) = .init(init.io, &tty, &vx);
     if (!vx.state.in_band_resize) {
-        try loop.init();
+        try loop.installResizeHandler();
     }
     try loop.start();
     defer loop.stop();
@@ -40,7 +33,7 @@ pub fn main() !void {
     try vx.enterAltScreen(tty.writer());
     defer vx.exitAltScreen(tty.writer()) catch {};
 
-    try vx.queryTerminal(tty.writer(), 1 * std.time.ns_per_s);
+    try vx.queryTerminal(tty.writer(), .fromSeconds(1));
     try vx.setBracketedPaste(tty.writer(), true);
     defer vx.setBracketedPaste(tty.writer(), false) catch {};
 
@@ -48,17 +41,17 @@ pub fn main() !void {
     defer vx.setMouseMode(tty.writer(), false) catch {};
 
     const tick_ms: u64 = 33;
-    var next_frame_ms: u64 = @intCast(std.time.milliTimestamp());
+    var next_frame_ms: u64 = @intCast(app_mod.nowMilliseconds());
 
     var running = true;
     while (running) {
-        const now_ms: u64 = @intCast(std.time.milliTimestamp());
+        const now_ms: u64 = @intCast(app_mod.nowMilliseconds());
         if (now_ms < next_frame_ms) {
-            std.Thread.sleep((next_frame_ms - now_ms) * std.time.ns_per_ms);
+            try std.Io.sleep(init.io, .fromMilliseconds(@intCast(next_frame_ms - now_ms)), .awake);
         }
-        next_frame_ms = @as(u64, @intCast(std.time.milliTimestamp())) + tick_ms;
+        next_frame_ms = @as(u64, @intCast(app_mod.nowMilliseconds())) + tick_ms;
 
-        loop.queue.lock();
+        try loop.queue.lock();
         const max_events_per_frame: usize = 200;
         var processed: usize = 0;
         var pending_event: ?Event = null;
@@ -160,7 +153,7 @@ fn handleEvent(
             if (toKeyInput(key)) |input| {
                 const should_exit = try app.handleKey(input, runtime);
                 if (should_exit) {
-                running.* = false;
+                    running.* = false;
                 }
             }
         },

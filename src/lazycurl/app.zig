@@ -6,6 +6,29 @@ const persistence = @import("lazycurl_persistence");
 const command_builder = @import("lazycurl_command");
 const text_input = @import("lazycurl_text_input");
 
+pub fn nowMilliseconds() i64 {
+    return core.nowMilliseconds();
+}
+
+fn defaultIo() std.Io {
+    return std.Options.debug_io;
+}
+
+fn readFileAlloc(allocator: std.mem.Allocator, file: std.Io.File, limit: usize) ![]u8 {
+    var buffer: [4096]u8 = undefined;
+    var reader = file.reader(defaultIo(), &buffer);
+    return reader.interface.allocRemaining(allocator, .limited(limit)) catch |err| switch (err) {
+        error.ReadFailed => return reader.err.?,
+        else => |e| return e,
+    };
+}
+
+fn envVarOwned(allocator: std.mem.Allocator, comptime name: [:0]const u8) !?[]u8 {
+    const value = std.c.getenv(name.ptr) orelse return null;
+    const owned = try allocator.dupe(u8, std.mem.span(value));
+    return owned;
+}
+
 pub const Runtime = struct {
     allocator: std.mem.Allocator,
     executor: execution.executor.CommandExecutor,
@@ -16,9 +39,19 @@ pub const Runtime = struct {
     stream_stderr: std.ArrayList(u8),
 
     pub fn init(allocator: std.mem.Allocator) !Runtime {
+        var executor = execution.executor.CommandExecutor.init(allocator);
+        errdefer executor.deinit();
+        return try initWithExecutor(allocator, executor);
+    }
+
+    pub fn initWithIo(allocator: std.mem.Allocator, io: std.Io) !Runtime {
+        return try initWithExecutor(allocator, execution.executor.CommandExecutor.initWithIo(allocator, io));
+    }
+
+    fn initWithExecutor(allocator: std.mem.Allocator, executor: execution.executor.CommandExecutor) !Runtime {
         return .{
             .allocator = allocator,
-            .executor = execution.executor.CommandExecutor.init(allocator),
+            .executor = executor,
             .stream_stdout = try std.ArrayList(u8).initCapacity(allocator, 0),
             .stream_stderr = try std.ArrayList(u8).initCapacity(allocator, 0),
         };
@@ -31,6 +64,7 @@ pub const Runtime = struct {
         if (self.last_result) |*result| {
             result.deinit(self.allocator);
         }
+        self.executor.deinit();
         self.stream_stdout.deinit(self.allocator);
         self.stream_stderr.deinit(self.allocator);
     }
@@ -1162,12 +1196,13 @@ pub const App = struct {
             }
             const path = try self.expandHomePath(raw_path);
             defer self.allocator.free(path);
-            const file = std.fs.cwd().openFile(path, .{ .mode = .read_only }) catch |err| {
+            const io = defaultIo();
+            const file = std.Io.Dir.cwd().openFile(io, path, .{ .mode = .read_only }) catch |err| {
                 try self.setImportErrorFmt("File error: {s}", .{@errorName(err)});
                 return;
             };
-            defer file.close();
-            const data = file.readToEndAlloc(self.allocator, 10 * 1024 * 1024) catch |err| {
+            defer file.close(io);
+            const data = readFileAlloc(self.allocator, file, 10 * 1024 * 1024) catch |err| {
                 try self.setImportErrorFmt("Read error: {s}", .{@errorName(err)});
                 return;
             };
@@ -1265,7 +1300,10 @@ pub const App = struct {
     };
 
     fn downloadSwaggerSpec(self: *App, url: []const u8) !DownloadResult {
-        var client: std.http.Client = .{ .allocator = self.allocator };
+        var http_io_threaded = std.Io.Threaded.init(self.allocator, .{});
+        defer http_io_threaded.deinit();
+
+        var client: std.http.Client = .{ .allocator = self.allocator, .io = http_io_threaded.io() };
         defer client.deinit();
 
         var sink: std.Io.Writer.Allocating = .init(self.allocator);
@@ -1286,12 +1324,7 @@ pub const App = struct {
 
     fn expandHomePath(self: *App, path: []const u8) ![]u8 {
         if (path.len >= 2 and path[0] == '~' and path[1] == '/') {
-            const home = std.process.getEnvVarOwned(self.allocator, "HOME") catch |err| {
-                if (err == error.EnvironmentVariableNotFound) {
-                    return try self.allocator.dupe(u8, path);
-                }
-                return err;
-            };
+            const home = (try envVarOwned(self.allocator, "HOME")) orelse return try self.allocator.dupe(u8, path);
             defer self.allocator.free(home);
             return std.fs.path.join(self.allocator, &.{ home, path[2..] });
         }
@@ -1812,7 +1845,7 @@ pub const App = struct {
     }
 
     pub fn markOutputCopied(self: *App) void {
-        self.ui.output_copy_until_ms = std.time.milliTimestamp() + 2000;
+        self.ui.output_copy_until_ms = core.nowMilliseconds() + 2000;
     }
 
     fn handleSingleLineEditingKey(self: *App, input: KeyInput) !bool {
@@ -2919,11 +2952,13 @@ pub fn run(allocator: std.mem.Allocator) !void {
     var runtime = try Runtime.init(allocator);
     defer runtime.deinit();
 
-    var stdout = std.fs.File.stdout().deprecatedWriter();
-    try stdout.print(
+    var stdout_buffer: [1024]u8 = undefined;
+    var stdout = std.Io.File.stdout().writerStreaming(defaultIo(), &stdout_buffer);
+    try stdout.interface.print(
         "lazycurl Zig workspace initialized.\n{s}\n",
         .{summary},
     );
+    try stdout.flush();
 
     // Placeholder use to ensure the libvaxis dependency is wired up.
     _ = vaxis;

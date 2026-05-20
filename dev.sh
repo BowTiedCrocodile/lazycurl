@@ -17,10 +17,15 @@ Any arguments after `--` are forwarded to `zig build run`.
 EOF
 }
 
-zig_bin="./zig-aarch64-macos-0.15.1/zig"
-if [[ ! -x "$zig_bin" ]]; then
-    zig_bin="zig"
-fi
+zig_bin="${ZIG:-zig}"
+zig_version="$("$zig_bin" version)"
+case "$zig_version" in
+    0.16.*) ;;
+    *)
+        echo "error: lazycurl requires Zig 0.16.x; found $zig_version via $zig_bin" >&2
+        exit 1
+        ;;
+esac
 
 cmd="${1:-run}"
 if [ $# -gt 0 ]; then
